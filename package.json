@@ -9,11 +9,14 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.995.0",
+    "@aws-sdk/client-polly": "^3.995.0",
     "@google/genai": "^1.39.0",
     "@google/generative-ai": "^0.24.1",
     "@mediapipe/camera_utils": "^0.3.1675466862",
     "@mediapipe/drawing_utils": "^0.3.1675466124",
     "@mediapipe/selfie_segmentation": "^0.1.1675465747",
+    "@smithy/node-http-handler": "^4.4.10",
     "@supabase/supabase-js": "^2.47.0",
     "@tensorflow-models/coco-ssd": "^2.2.3",
     "@tensorflow/tfjs": "^4.22.0",

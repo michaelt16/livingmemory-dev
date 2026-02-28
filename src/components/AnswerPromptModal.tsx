@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { GeminiLiveClient, getAuthToken } from '@/lib/gemini-live';
+import { NovaLiveClient, getAuthToken } from '@/lib/nova-live';
 import EVAOrb from '@/components/EVAOrb';
 import { AuroraWave } from '@/components/capture/AuroraWave';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -72,7 +72,7 @@ export default function AnswerPromptModal({
   const [evaTurns, setEvaTurns] = useState(0); // counts how many times EVA finished speaking
   const [userHasSpoken, setUserHasSpoken] = useState(false); // tracks if user toggled mic at least once
   
-  const liveClientRef = useRef<GeminiLiveClient | null>(null);
+  const liveClientRef = useRef<NovaLiveClient | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const hasGreetedRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -138,7 +138,7 @@ Signs the question has been answered (stop asking more):
 Be warm, patient, and encouraging. This is a family moment.
 Keep your responses concise — 1-2 sentences max.`;
 
-      const client = new GeminiLiveClient(apiKey, {
+      const client = new NovaLiveClient(apiKey, {
         responseModalities: ['AUDIO'],
         systemInstruction: systemPrompt,
         speechConfig: {

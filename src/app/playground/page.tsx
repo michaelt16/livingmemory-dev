@@ -29,7 +29,7 @@ import {
   getMemoryBankSummary,
   type MemoryBank,
 } from '@/lib/memory-bank';
-import { GeminiLiveClient, getAuthToken } from '@/lib/gemini-live';
+import { NovaLiveClient, getAuthToken } from '@/lib/nova-live';
 import { useCamera } from '@/hooks/use-camera';
 import { usePhotoScanner } from '@/hooks/use-photo-scanner';
 import LiveMode from './components/LiveMode';
@@ -113,7 +113,7 @@ export default function PlaygroundPage() {
   const [isMicActive, setIsMicActive] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const liveClientRef = useRef<GeminiLiveClient | null>(null);
+  const liveClientRef = useRef<NovaLiveClient | null>(null);
   const videoFrameIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const speakingTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Debounce speaking state
   
@@ -381,7 +381,7 @@ export default function PlaygroundPage() {
       }
       
       // Create Live client with callbacks
-      const client = new GeminiLiveClient(
+      const client = new NovaLiveClient(
         apiKey,
         {
           // Using gemini-2.5-flash-native-audio-preview-12-2025 which requires AUDIO modality

@@ -2,15 +2,12 @@
  * Auto Photo Capture - Reliable photo extraction from camera frames
  * 
  * Uses multiple strategies to ensure clean photo extraction:
- * 1. Gemini image generation (if available)
+ * 1. Nova vision for corner detection
  * 2. Multi-point corner detection with perspective correction
  * 3. Edge detection with smart cropping
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+import { analyzeImage } from '@/lib/nova';
 
 interface PhotoCorners {
   topLeft: [number, number];
@@ -40,8 +37,6 @@ interface ExtractedPhoto {
  * Uses a more specific prompt to get accurate corners
  */
 async function detectPhotoCorners(imageBase64: string): Promise<PhotoDetectionResult> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-
   const prompt = `You are a precise photo scanner. Analyze this camera image where someone is holding up a physical photograph.
 
 YOUR TASK: Find the EXACT corners of the photograph's content area (not the frame, not hands).
@@ -74,18 +69,8 @@ If no photo visible: {"detected": false, "confidence": 0}
 ONLY output JSON.`;
 
   try {
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: 'image/jpeg',
-          data: imageBase64.replace(/^data:image\/\w+;base64,/, ''),
-        },
-      },
-      prompt,
-    ]);
-
-    const response = await result.response;
-    const text = response.text().trim();
+    const base64Clean = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+    const text = (await analyzeImage(base64Clean, prompt, 'image/jpeg')).trim();
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
@@ -147,66 +132,12 @@ ONLY output JSON.`;
 }
 
 /**
- * Try to use Gemini's image generation to create a clean extracted photo
- * This is the "Nano Banana" approach - requires responseModalities: ['IMAGE', 'TEXT']
+ * Image generation extraction - Nova does not support image generation.
+ * This strategy is disabled; falls through to perspective correction or smart crop.
  */
-async function extractWithImageGeneration(imageBase64: string): Promise<string | null> {
-  console.log('🍌 [auto-capture] Trying Nano Banana extraction...');
-  
-  try {
-    // Use Gemini model with image output capability
-    const model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.0-flash-preview-image-generation',
-      generationConfig: {
-        // @ts-ignore - responseModalities may not be in types yet
-        responseModalities: ['IMAGE', 'TEXT'],
-      }
-    });
-
-    const prompt = `Extract ONLY the photograph from this image. 
-
-Remove completely:
-- All hands, fingers, thumbs
-- All background (table, surface, wall)
-- Photo frame or borders
-- Any reflections or glare
-
-Output ONLY the photograph content as a clean, properly oriented image.
-Make it look like a professional digital scan.
-Straighten if tilted.
-Fill the entire output with just the photo.`;
-
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: 'image/jpeg',
-          data: imageBase64.replace(/^data:image\/\w+;base64,/, ''),
-        },
-      },
-      prompt,
-    ]);
-
-    const response = await result.response;
-    const parts = response.candidates?.[0]?.content?.parts || [];
-
-    console.log('🍌 [auto-capture] Response parts:', parts.length, 
-      parts.map((p: any) => p.inlineData ? 'image' : (p.text ? 'text' : 'unknown')));
-
-    for (const part of parts) {
-      // @ts-ignore - inlineData type
-      if (part.inlineData && part.inlineData.mimeType?.startsWith('image/')) {
-        console.log('🍌 [auto-capture] ✅ Got image output!');
-        // @ts-ignore
-        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-      }
-    }
-
-    console.log('🍌 [auto-capture] No image in response');
-    return null;
-  } catch (error: any) {
-    console.log('🍌 [auto-capture] ❌ Nano Banana failed:', error?.message || error);
-    return null;
-  }
+async function extractWithImageGeneration(_imageBase64: string): Promise<string | null> {
+  console.log('🍌 [auto-capture] Image generation not supported with Nova, skipping...');
+  return null;
 }
 
 /**
@@ -377,7 +308,7 @@ export async function extractCleanPhoto(imageBase64: string): Promise<ExtractedP
     issues: detection.issues,
   });
 
-  // Step 2: Try Gemini image generation (best quality)
+  // Step 2: Try image generation (disabled - Nova doesn't support; would use perspective/crop)
   console.log('📸 Trying image generation extraction...');
   const generatedImage = await extractWithImageGeneration(imageBase64);
   if (generatedImage) {
@@ -426,8 +357,6 @@ export async function validateExtraction(imageBase64: string): Promise<{
   isClean: boolean;
   issues: string[];
 }> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-
   const prompt = `Analyze this image. Is it a clean, properly cropped photograph?
 
 Check for these issues:
@@ -448,18 +377,8 @@ A clean photo should look like a professional digital scan with no hands or back
 ONLY output JSON.`;
 
   try {
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: 'image/jpeg',
-          data: imageBase64.replace(/^data:image\/\w+;base64,/, ''),
-        },
-      },
-      prompt,
-    ]);
-
-    const response = await result.response;
-    const text = response.text().trim();
+    const base64Clean = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+    const text = (await analyzeImage(base64Clean, prompt, 'image/jpeg')).trim();
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {

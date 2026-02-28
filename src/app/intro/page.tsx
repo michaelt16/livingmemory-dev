@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import EVAOrb from '@/components/EVAOrb';
 import { AuroraWave } from '@/components/capture/AuroraWave';
-import { GeminiLiveClient, getAuthToken } from '@/lib/gemini-live';
+import { NovaLiveClient, getAuthToken } from '@/lib/nova-live';
 
 // EVA's script - combined into continuous speech blocks for natural flow
 // Each line is spoken as one continuous audio clip
@@ -114,7 +114,7 @@ export default function IntroPage() {
   const [albumName, setAlbumName] = useState('');
   
   // Live API refs
-  const liveClientRef = useRef<GeminiLiveClient | null>(null);
+  const liveClientRef = useRef<NovaLiveClient | null>(null);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [isLiveConnecting, setIsLiveConnecting] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
@@ -142,7 +142,7 @@ export default function IntroPage() {
       if (!apiKey) throw new Error('Failed to get API credentials');
       
       return new Promise((resolve) => {
-        const client = new GeminiLiveClient(apiKey, {
+        const client = new NovaLiveClient(apiKey, {
           responseModalities: ['AUDIO'],
           systemInstruction: `You are EVA, a warm AI companion for Living Memory. 
 When asked to say something, speak it exactly as written with natural, warm delivery.

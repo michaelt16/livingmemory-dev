@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { GeminiLiveClient, getAuthToken } from '@/lib/gemini-live';
+import { NovaLiveClient, getAuthToken } from '@/lib/nova-live';
 import EVAOrb from '@/components/EVAOrb';
 import { AuroraWave } from '@/components/capture/AuroraWave';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -35,7 +35,7 @@ export default function EVACompanionModal({ isOpen, onClose }: EVACompanionModal
   const [albumName, setAlbumName] = useState('');
   
   // Refs
-  const liveClientRef = useRef<GeminiLiveClient | null>(null);
+  const liveClientRef = useRef<NovaLiveClient | null>(null);
   const pendingNavigateRef = useRef<{ albumId: string; phase: 'name_response' | 'redirect_message' } | null>(null);
   const routerRef = useRef(router);
   const handleCloseRef = useRef<() => void>(() => {});
@@ -60,7 +60,7 @@ Do NOT mention being an AI. Speak naturally as a caring companion. Keep it brief
       const apiKey = auth.apiKey || auth.token;
       if (!apiKey) throw new Error('Failed to get API credentials');
       
-      const client = new GeminiLiveClient(apiKey, {
+      const client = new NovaLiveClient(apiKey, {
         responseModalities: ['AUDIO'],
         systemInstruction,
         speechConfig: {

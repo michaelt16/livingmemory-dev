@@ -1,12 +1,5 @@
-/**
- * API Route for checking if a photo is visible in frame with corner detection
- * Returns 200 with detected: false on API/parse errors so the scan loop keeps running.
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+import { analyzeImage } from '@/lib/nova';
 
 function safeResponse(
   detected: boolean,
@@ -31,15 +24,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 });
     }
 
-    if (!GEMINI_API_KEY) {
-      return safeResponse(false, false, ['API key not configured']);
-    }
-
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    // Prefer 1.5-flash (stable); fallback to 2.0-flash-exp if needed
-    const modelName = 'gemini-1.5-flash';
-    const model = genAI.getGenerativeModel({ model: modelName });
-
     const prompt = `You are looking at a camera image. 
 
 1. Is there a physical photograph, printed picture, or paper document visible in the image? (Answer PHOTO:YES or PHOTO:NO)
@@ -52,30 +36,10 @@ Reply with exactly two words in this format: PHOTO:YES CORNERS:YES or PHOTO:YES 
       return safeResponse(false, false, ['Invalid image data']);
     }
 
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: 'image/jpeg',
-          data: cleanBase64,
-        },
-      },
-      prompt,
-    ]);
-
-    const response = result.response;
-    if (!response) {
-      return safeResponse(false, false, ['No response from model']);
-    }
-
     let text: string;
     try {
-      text = (response.text?.() ?? '').trim().toUpperCase();
+      text = await analyzeImage(cleanBase64, prompt, 'image/jpeg');
     } catch {
-      const candidate = response.candidates?.[0];
-      const blockReason = candidate?.finishReason ?? 'unknown';
-      if (blockReason && blockReason !== 'STOP') {
-        console.warn('Photo check blocked:', blockReason);
-      }
       return safeResponse(false, false, ['Could not read model response']);
     }
 
@@ -83,9 +47,9 @@ Reply with exactly two words in this format: PHOTO:YES CORNERS:YES or PHOTO:YES 
       return safeResponse(false, false, ['Empty model response']);
     }
 
-    // Be lenient: accept PHOTO:YES and CORNERS:YES with optional spaces (model may add extra text)
-    const hasPhoto = /PHOTO\s*:\s*YES|PHOTO\s+YES/i.test(text);
-    const allCornersVisible = /CORNERS\s*:\s*YES|CORNERS\s+YES/i.test(text);
+    const upper = text.toUpperCase();
+    const hasPhoto = /PHOTO\s*:\s*YES|PHOTO\s+YES/i.test(upper);
+    const allCornersVisible = /CORNERS\s*:\s*YES|CORNERS\s+YES/i.test(upper);
 
     return safeResponse(hasPhoto, allCornersVisible);
   } catch (error: unknown) {

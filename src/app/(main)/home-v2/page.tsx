@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { GeminiLiveClient, getAuthToken } from '@/lib/gemini-live';
+import { NovaLiveClient, getAuthToken } from '@/lib/nova-live';
 import { AuroraWave } from '@/components/capture/AuroraWave';
 
 // EVA Orb - loaded client-side only
@@ -247,7 +247,7 @@ export default function HomeV2Page() {
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   
   // Live API for EVA greeting
-  const liveClientRef = useRef<GeminiLiveClient | null>(null);
+  const liveClientRef = useRef<NovaLiveClient | null>(null);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   
   // Get user name from localStorage
@@ -287,7 +287,7 @@ export default function HomeV2Page() {
       const apiKey = auth.apiKey || auth.token;
       if (!apiKey) return;
       
-      const client = new GeminiLiveClient(apiKey, {
+      const client = new NovaLiveClient(apiKey, {
         responseModalities: ['AUDIO'],
         systemInstruction: `You are EVA, a warm AI companion for Living Memory. Be brief, friendly, and helpful.`,
         speechConfig: {

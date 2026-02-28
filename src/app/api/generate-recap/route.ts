@@ -1,7 +1,5 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
-
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
+import { generateText } from '@/lib/nova';
 
 export async function POST(request: Request) {
   try {
@@ -10,8 +8,6 @@ export async function POST(request: Request) {
     if (!conversation || typeof conversation !== 'string') {
       return NextResponse.json({ error: 'Conversation text required' }, { status: 400 });
     }
-    
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     
     const prompt = `You are summarizing a conversation about a family photo/memory. Create a brief, warm recap (2-3 sentences max) that captures the key details shared.
 
@@ -28,10 +24,9 @@ ${conversation}
 
 RECAP:`;
 
-    const result = await model.generateContent(prompt);
-    const recap = result.response.text().trim();
+    const recap = await generateText(prompt);
     
-    return NextResponse.json({ recap });
+    return NextResponse.json({ recap: recap.trim() });
   } catch (error) {
     console.error('Generate recap error:', error);
     return NextResponse.json(

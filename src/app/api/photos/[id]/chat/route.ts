@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-/**
- * POST /api/photos/[id]/chat
- * Simple chat about a single photo using regular Gemini API (not Live).
- * Body: { message: string, history?: { role: string, content: string }[] }
- */
+import { chat } from '@/lib/nova';
 
 const SYSTEM_PROMPT = `You are a warm, friendly AI helping someone share memories about an old photograph. Your goal is to help them capture the story behind the photo through natural conversation.
 
@@ -18,12 +12,6 @@ Guidelines:
 - If they seem done, acknowledge the story warmly
 
 Start by acknowledging what you can see in the photo (if provided) and ask them to tell you about it.`;
-
-function getGeminiClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
-  return new GoogleGenerativeAI(apiKey);
-}
 
 export async function POST(
   request: NextRequest,
@@ -45,7 +33,6 @@ export async function POST(
 
     const supabase = createServerClient();
 
-    // Fetch the photo to get its URL
     const { data: photo, error: photoError } = await supabase
       .from('photos')
       .select('id, original_url, cleaned_url')
@@ -56,30 +43,18 @@ export async function POST(
       return NextResponse.json({ error: 'Photo not found' }, { status: 404 });
     }
 
-    const genAI = getGeminiClient();
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const chatHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [
+      { role: 'user', content: SYSTEM_PROMPT },
+      { role: 'assistant', content: "I'd love to hear about this photo! Tell me, what's the story here? Who do we see, and what was happening when this was taken?" },
+      ...history.map((h: { role: string; content: string }) => ({
+        role: (h.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: h.content,
+      })),
+      { role: 'user' as const, content: message },
+    ];
 
-    // Build conversation history for Gemini
-    const chatHistory = history.map((h: { role: string; content: string }) => ({
-      role: h.role === 'user' ? 'user' : 'model',
-      parts: [{ text: h.content }],
-    }));
+    const responseText = await chat(chatHistory);
 
-    // Start chat with system prompt
-    const chat = model.startChat({
-      history: [
-        { role: 'user', parts: [{ text: SYSTEM_PROMPT }] },
-        { role: 'model', parts: [{ text: "I'd love to hear about this photo! Tell me, what's the story here? Who do we see, and what was happening when this was taken?" }] },
-        ...chatHistory,
-      ],
-    });
-
-    // Send user message
-    const result = await chat.sendMessage(message);
-    const responseText = result.response.text();
-
-    // Store the message in the database
-    // First, find or create a conversation for this photo
     let conversationId: string;
 
     const { data: existingConv } = await supabase
@@ -106,7 +81,6 @@ export async function POST(
       conversationId = newConv.id;
     }
 
-    // Store both messages
     const now = Date.now();
     await supabase.from('messages').insert([
       { conversation_id: conversationId, role: 'user', content: message, timestamp_ms: now },
@@ -124,10 +98,6 @@ export async function POST(
   }
 }
 
-/**
- * GET /api/photos/[id]/chat
- * Get existing chat history for a photo
- */
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -141,7 +111,6 @@ export async function GET(
 
     const supabase = createServerClient();
 
-    // Get conversation for this photo
     const { data: conversation } = await supabase
       .from('conversations')
       .select('id')
@@ -154,7 +123,6 @@ export async function GET(
       return NextResponse.json({ messages: [] });
     }
 
-    // Get messages
     const { data: messages } = await supabase
       .from('messages')
       .select('role, content, timestamp_ms')

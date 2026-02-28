@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { GeminiLiveClient, getAuthToken } from '@/lib/gemini-live';
+import { NovaLiveClient, getAuthToken } from '@/lib/nova-live';
 import { useCamera } from '@/hooks/use-camera';
 import { usePhotoScanner } from '@/hooks/use-photo-scanner';
 import { ScanOverlay, PhotoGallery, ControlsBar, AuroraWave } from '@/components/capture';
@@ -154,7 +154,7 @@ export default function CaptureSession({
   const [eventError, setEventError] = useState<string | null>(null);
   
   // Refs
-  const liveClientRef = useRef<GeminiLiveClient | null>(null);
+  const liveClientRef = useRef<NovaLiveClient | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -614,7 +614,7 @@ BLURRY OR UNCLEAR IMAGES:
         location: event.location ?? undefined,
       };
       
-      const client = new GeminiLiveClient(apiKey, {
+      const client = new NovaLiveClient(apiKey, {
         responseModalities: ['AUDIO'],
         systemInstruction: buildSystemInstruction(albumContext),
         speechConfig: {

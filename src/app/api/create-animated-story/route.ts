@@ -1,16 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateTTS, generateTTSGoogle } from '@/lib/voice-service';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+import { analyzeImage, fetchImageAsNovaInput } from '@/lib/nova';
 
 /**
- * Check if photo contains minors using Gemini Vision
+ * Check if photo contains minors using Nova Vision
  */
-async function detectMinors(imageBase64: string): Promise<boolean> {
+async function detectMinors(photoUrlOrBase64: string): Promise<boolean> {
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-    
+    let imageBase64: string;
+    let mimeType = 'image/jpeg';
+
+    if (photoUrlOrBase64.startsWith('http://') || photoUrlOrBase64.startsWith('https://')) {
+      const imagePart = await fetchImageAsNovaInput(photoUrlOrBase64);
+      if (!imagePart) return false;
+      imageBase64 = imagePart.base64;
+      mimeType = imagePart.mimeType;
+    } else {
+      imageBase64 = photoUrlOrBase64.replace(/^data:image\/\w+;base64,/, '');
+    }
+
     const prompt = `Analyze this photo and determine if it contains any children or minors (people under 18 years old).
 
 Look for:
@@ -20,19 +28,8 @@ Look for:
 
 Respond with ONLY "YES" if minors are detected, or "NO" if no minors are present.`;
 
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: 'image/jpeg',
-          data: imageBase64.replace(/^data:image\/\w+;base64,/, ''),
-        },
-      },
-      prompt,
-    ]);
+    const text = (await analyzeImage(imageBase64, prompt, mimeType)).toUpperCase().trim();
 
-    const response = await result.response;
-    const text = response.text().toUpperCase().trim();
-    
     return text.includes('YES');
   } catch (error) {
     console.error('Minor detection error:', error);

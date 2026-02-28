@@ -6,7 +6,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { GeminiLiveClient, getAuthToken } from '@/lib/gemini-live';
+import { NovaLiveClient, getAuthToken } from '@/lib/nova-live';
 import { useCamera } from '@/hooks/use-camera';
 import { usePhotoScanner } from '@/hooks/use-photo-scanner';
 import { saveSession, updateSession, saveMessage, getAssociatedPhotoIds, getSession, savePhoto } from '@/lib/storage/conversation-storage';
@@ -50,7 +50,7 @@ export default function LiveMode({
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   
-  const liveClientRef = useRef<GeminiLiveClient | null>(null);
+  const liveClientRef = useRef<NovaLiveClient | null>(null);
   const speakingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const liveMessagesEndRef = useRef<HTMLDivElement>(null);
   const lastPhotoCaptureTimeRef = useRef<number>(0);
@@ -145,7 +145,7 @@ export default function LiveMode({
         throw new Error('Failed to get API credentials');
       }
       
-      const client = new GeminiLiveClient(apiKey, {
+      const client = new NovaLiveClient(apiKey, {
         responseModalities: ['AUDIO'],
         systemInstruction: `You are Gemini, a helpful and friendly AI assistant helping preserve family memories. You can see through the user's camera and hear them speak.
 

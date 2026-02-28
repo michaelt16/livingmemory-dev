@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { generateText } from '@/lib/nova';
 
 /**
  * PUT /api/events/[id]/narration/segment
@@ -29,12 +29,6 @@ Generate a new ~20-25 word narration for this photo that:
 4. Maintains the warm, personal storytelling tone
 
 Return ONLY the narration text, no JSON or extra formatting.`;
-
-function getGeminiClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
-  return new GoogleGenerativeAI(apiKey);
-}
 
 export async function PUT(
   request: NextRequest,
@@ -105,11 +99,7 @@ export async function PUT(
         .replace('{next_text}', nextText)
         .replace('{photo_facts}', photoFacts);
 
-      const genAI = getGeminiClient();
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-
-      const result = await model.generateContent(prompt);
-      newText = result.response.text().trim();
+      newText = (await generateText(prompt)).trim();
       
       // Clean up any quotes or extra formatting
       newText = newText.replace(/^["']|["']$/g, '').trim();

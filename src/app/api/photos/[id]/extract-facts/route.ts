@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { generateText } from '@/lib/nova';
 
 interface ExtractedFacts {
   who: string[];
@@ -34,14 +34,6 @@ Rules:
 
 Return ONLY the JSON object, no other text.`;
 
-function getGeminiClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is not set');
-  }
-  return new GoogleGenerativeAI(apiKey);
-}
-
 function calculateCompleteness(facts: ExtractedFacts): number {
   const categories = ['who', 'what', 'when', 'where', 'why'] as const;
   let filled = 0;
@@ -55,13 +47,6 @@ function calculateCompleteness(facts: ExtractedFacts): number {
   return Math.round((filled / categories.length) * 100);
 }
 
-/**
- * POST /api/photos/[id]/extract-facts
- * Extract structured facts from a photo's conversation.
- * Stores results in photo_stories table.
- * 
- * Can accept messages directly in request body OR fetch from database.
- */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -75,19 +60,16 @@ export async function POST(
 
     const supabase = createServerClient();
     
-    // Check if messages were provided in request body
     let body: { messages?: Array<{ role: string; content: string }>; userName?: string } = {};
     try {
       body = await request.json();
       console.log('Received body:', JSON.stringify(body, null, 2));
     } catch (e) {
       console.log('No body or invalid JSON:', e);
-      // No body or invalid JSON - will fetch from database
     }
     
     let conversationText = '';
     
-    // Option 1: Use messages from request body
     if (body.messages && Array.isArray(body.messages) && body.messages.length > 0) {
       console.log('Using messages from body, count:', body.messages.length);
       const displayName = body.userName || 'User';
@@ -97,7 +79,6 @@ export async function POST(
       console.log('Conversation text:', conversationText.substring(0, 500));
     } else {
       console.log('No messages in body, fetching from database');
-      // Option 2: Fetch from database
       const { data: conversations, error: convError } = await supabase
         .from('conversations')
         .select(`
@@ -124,9 +105,7 @@ export async function POST(
 
       const conversation = conversations[0];
       
-      // Build conversation text for analysis
       if (conversation.messages && conversation.messages.length > 0) {
-        // Sort messages by timestamp
         const sortedMessages = [...conversation.messages].sort(
           (a, b) => (a.timestamp_ms || 0) - (b.timestamp_ms || 0)
         );
@@ -134,7 +113,6 @@ export async function POST(
           .map(m => `${m.role === 'user' ? (body.userName || 'User') : 'AI'}: ${m.content}`)
           .join('\n');
       } else if (conversation.transcript) {
-        // Fallback to transcript JSON
         try {
           const messages = JSON.parse(conversation.transcript);
           conversationText = messages
@@ -152,18 +130,10 @@ export async function POST(
       return NextResponse.json({ error: 'Conversation is empty' }, { status: 400 });
     }
 
-    // Extract facts using Gemini
-    const genAI = getGeminiClient();
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-
-    const result = await model.generateContent([
-      FACT_EXTRACTION_PROMPT,
-      `\n\nConversation to analyze:\n${conversationText}`,
-    ]);
-
-    const responseText = result.response.text();
+    const responseText = await generateText(
+      `${FACT_EXTRACTION_PROMPT}\n\nConversation to analyze:\n${conversationText}`
+    );
     
-    // Parse JSON from response
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.error('Failed to parse facts response:', responseText);
@@ -178,30 +148,22 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to parse extracted facts' }, { status: 500 });
     }
 
-    // Calculate completeness
     const completeness = calculateCompleteness(extractedFacts);
 
-    // FIRST: Update the photo's summary field (this is what we really need)
     const { error: photoUpdateError } = await supabase
       .from('photos')
-      .update({ 
-        summary: extractedFacts.summary,
-      })
+      .update({ summary: extractedFacts.summary })
       .eq('id', photoId);
 
     if (photoUpdateError) {
       console.error('Error updating photo summary:', photoUpdateError);
-      // Continue anyway - we still want to return the summary
     } else {
       console.log('Successfully updated photo summary for:', photoId);
     }
 
-    // OPTIONAL: Try to save detailed facts to photo_stories table
-    // This may fail if the table doesn't exist, but that's OK
     let storyId: string | null = null;
     
     try {
-      // Check if photo_stories record already exists
       const { data: existingStory } = await supabase
         .from('photo_stories')
         .select('id')
@@ -235,7 +197,6 @@ export async function POST(
         storyId = newStory?.id || null;
       }
     } catch (e) {
-      // photo_stories table might not exist - that's OK
       console.log('Could not save to photo_stories (table may not exist):', e);
     }
 
@@ -257,10 +218,6 @@ export async function POST(
   }
 }
 
-/**
- * GET /api/photos/[id]/extract-facts
- * Get existing extracted facts for a photo.
- */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -282,7 +239,6 @@ export async function GET(
 
     if (error) {
       if (error.code === 'PGRST116') {
-        // No rows returned
         return NextResponse.json({ error: 'No facts found for this photo' }, { status: 404 });
       }
       return NextResponse.json({ error: error.message }, { status: 502 });

@@ -1,29 +1,12 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { analyzeImage, generateText } from '@/lib/nova';
 
-// This API route handles live multimodal conversations with Gemini
-// It accepts video frames and text, and streams back responses
+// This API route handles live multimodal conversations with Nova
+// It accepts video frames and text, and streams back responses (non-streaming model, simulated SSE)
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { imageBase64, message, conversationHistory = [] } = body;
-
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return Response.json({ error: 'API key not configured' }, { status: 500 });
-    }
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.0-flash',
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 1024,
-      },
-    });
-
-    // Build the content parts
-    const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
 
     // System context for live conversation
     const systemContext = `You are a friendly, warm AI assistant helping someone explore and share memories through their photos. 
@@ -45,47 +28,38 @@ Current conversation context:
 ${conversationHistory.map((msg: { role: string; content: string }) => `${msg.role}: ${msg.content}`).join('\n')}
 `;
 
-    parts.push({ text: systemContext });
+    const userPrompt = message
+      ? `User says: ${message}`
+      : imageBase64
+        ? 'User is showing you something through their camera. What do you see? Ask them about it.'
+        : '';
 
-    // Add the image if provided
-    if (imageBase64) {
-      // Remove data URL prefix if present
+    let text: string;
+    if (imageBase64 && userPrompt) {
       const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-      parts.push({
-        inlineData: {
-          mimeType: 'image/jpeg',
-          data: base64Data,
-        },
+      text = await analyzeImage(base64Data, userPrompt, 'image/jpeg', {
+        systemPrompt: systemContext,
+        maxTokens: 1024,
       });
+    } else if (userPrompt) {
+      text = await generateText(userPrompt, {
+        systemPrompt: systemContext,
+        maxTokens: 1024,
+        temperature: 0.7,
+      });
+    } else {
+      text = '';
     }
 
-    // Add the user's message
-    if (message) {
-      parts.push({ text: `User says: ${message}` });
-    } else if (imageBase64) {
-      parts.push({ text: 'User is showing you something through their camera. What do you see? Ask them about it.' });
-    }
-
-    // Generate response with streaming
-    const result = await model.generateContentStream(parts);
-
-    // Create a streaming response
+    // Simulate streaming response (Nova doesn't stream, send full text as single chunk)
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          for await (const chunk of result.stream) {
-            const text = chunk.text();
-            if (text) {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
-            }
-          }
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-          controller.close();
-        } catch (error) {
-          console.error('Stream error:', error);
-          controller.error(error);
+      start(controller) {
+        if (text) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
         }
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+        controller.close();
       },
     });
 

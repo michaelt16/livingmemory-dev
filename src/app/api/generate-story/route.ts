@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { generateText } from '@/lib/nova';
 import { LiveConversationMessage, PhotoAnalysis } from '@/lib/types';
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 interface GenerateStoryRequest {
   sessionId: string;
@@ -38,7 +36,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build conversation history text
     const conversationText = messages
       .map(msg => {
         const time = new Date(msg.timestamp).toLocaleTimeString();
@@ -47,7 +44,6 @@ export async function POST(request: NextRequest) {
       })
       .join('\n');
 
-    // Build photo context text
     const photoContexts = photos
       .map((photo, index) => {
         const photoNum = index + 1;
@@ -70,9 +66,8 @@ export async function POST(request: NextRequest) {
       })
       .join('\n\n');
 
-    // Find which photos are associated with which messages
     const messagePhotoMap = new Map<string, number[]>();
-    messages.forEach((msg, msgIndex) => {
+    messages.forEach((msg) => {
       msg.associatedPhotoIds.forEach(photoId => {
         const photoIndex = photos.findIndex(p => p.id === photoId);
         if (photoIndex >= 0) {
@@ -84,7 +79,6 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    // Build photo associations text
     const photoAssociations = Array.from(messagePhotoMap.entries())
       .map(([msgId, photoIndices]) => {
         const msg = messages.find(m => m.id === msgId);
@@ -95,7 +89,6 @@ export async function POST(request: NextRequest) {
       .filter(Boolean)
       .join('\n');
 
-    // Build the prompt
     const prompt = `You are creating a narration story from a conversation about family photos. This story will be narrated over photos in a photo album, so it should be a pure narrative - NOT a transcript of the conversation.
 
 CONVERSATION HISTORY (for context only - extract the story, don't include the Q&A format):
@@ -132,17 +125,11 @@ Example style:
 
 Generate the pure narration story now (NO conversation format, NO AI references, just the story):`;
 
-    // Generate story using Gemini
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const narrative = response.text();
+    const narrative = await generateText(prompt);
 
-    // Calculate word count and estimated duration
     const wordCount = narrative.split(/\s+/).length;
-    const estimatedDuration = Math.ceil(wordCount / 2.5); // ~2.5 words per second for narration
+    const estimatedDuration = Math.ceil(wordCount / 2.5);
 
-    // Generate a title from the first sentence or key theme
     const firstSentence = narrative.split(/[.!?]/)[0];
     const title = firstSentence.length > 60 
       ? firstSentence.substring(0, 60) + '...'

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { generateText } from '@/lib/nova';
 import { buildSynthesisPrompt } from '@/lib/prompts';
 import { ConversationMessage } from '@/lib/types';
 
@@ -19,17 +19,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'Gemini API key not configured' },
-        { status: 500 }
-      );
-    }
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-
     // Build conversation history for synthesis
     const conversationHistory = messages.map((m: ConversationMessage) => ({
       role: m.role,
@@ -44,8 +33,7 @@ export async function POST(request: NextRequest) {
     );
 
     // Get the synthesized narrative
-    const result = await model.generateContent(prompt);
-    const narrative = result.response.text().trim();
+    const narrative = (await generateText(prompt)).trim();
 
     // Estimate duration (roughly 2.5 words per second for natural speech)
     const wordCount = narrative.split(/\s+/).length;

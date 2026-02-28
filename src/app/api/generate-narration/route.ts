@@ -1,33 +1,8 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI, Part } from '@google/generative-ai';
-
-// Fetch image and convert to base64 inline data for Gemini multimodal
-async function fetchImageAsInlineData(url: string): Promise<Part | null> {
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) return null;
-    const buffer = await res.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString('base64');
-    const contentType = res.headers.get('content-type') || 'image/jpeg';
-    const mimeType = contentType.split(';')[0].trim();
-    return { inlineData: { mimeType, data: base64 } };
-  } catch {
-    return null;
-  }
-}
+import { generateWithImages, generateText, fetchImageAsNovaInput, type ImagePart } from '@/lib/nova';
 
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.error('GEMINI_API_KEY not set');
-      return NextResponse.json(
-        { error: 'API key not configured' },
-        { status: 500 }
-      );
-    }
-
-    const genAI = new GoogleGenerativeAI(apiKey);
     const { albumTitle, contextType, contextDescription, narrativePov, clips } = await request.json();
 
     const pov = narrativePov || 'first_person';
@@ -40,19 +15,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-
-    // ── Fetch all photo images in parallel for multimodal input ──
     const imageUrls: (string | null)[] = clips.map(
       (clip: { imageUrl?: string }) => clip.imageUrl || null
     );
     const imageParts = await Promise.all(
-      imageUrls.map((url) => (url ? fetchImageAsInlineData(url) : Promise.resolve(null)))
+      imageUrls.map((url) => (url ? fetchImageAsNovaInput(url) : Promise.resolve(null)))
     );
     const hasImages = imageParts.some(Boolean);
     console.log(`Multimodal narration: ${imageParts.filter(Boolean).length}/${clips.length} images loaded`);
 
-    // Build per-clip text descriptions
     const clipsDescription = clips.map((clip: { order: number; story: string; hasAnimation: boolean; perspectives?: Array<{ memberName: string; quote: string }> }, i: number) => {
       const parts = [`Clip ${clip.order}: ${clip.story}${clip.hasAnimation ? ' (has video animation)' : ' (static photo)'}`];
       if (clip.perspectives && clip.perspectives.length > 0) {
@@ -61,7 +32,7 @@ export async function POST(request: Request) {
         });
       }
       if (imageParts[i]) {
-        parts.push('  [Photo image attached above — use visual details you observe]');
+        parts.push('  [Photo image attached — use visual details you observe]');
       }
       return parts.join('\n');
     }).join('\n\n');
@@ -96,30 +67,25 @@ Respond in JSON format:
   "clipTexts": ["Narration for clip 1", "Narration for clip 2", ...]
 }`;
 
-    // ── Build multimodal parts: interleave images with text ──
-    const requestParts: Part[] = [];
+    let text: string;
     if (hasImages) {
-      // Add images first with labels, then the prompt
+      const validImages: ImagePart[] = [];
       clips.forEach((clip: { order: number }, i: number) => {
         const imgPart = imageParts[i];
         if (imgPart) {
-          requestParts.push({ text: `--- Photo for Clip ${clip.order} ---` });
-          requestParts.push(imgPart);
+          validImages.push({
+            ...imgPart,
+            label: `--- Photo for Clip ${clip.order} ---`,
+          });
         }
       });
-      requestParts.push({ text: textPrompt });
+      text = await generateWithImages(textPrompt, validImages);
     } else {
-      requestParts.push({ text: textPrompt });
+      text = await generateText(textPrompt);
     }
 
-    console.log('Calling Gemini (multimodal:', hasImages, ') with', requestParts.length, 'parts');
-    const result = await model.generateContent(requestParts);
-    console.log('Got Gemini response');
-    const response = result.response;
-    const text = response.text();
     console.log('Response text:', text.substring(0, 500));
 
-    // Parse JSON from response
     try {
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -133,7 +99,6 @@ Respond in JSON format:
       console.error('Failed to parse AI response as JSON:', parseError);
     }
 
-    // Fallback: return the raw text as narration
     return NextResponse.json({
       narration: text,
       clipTexts: [],
@@ -142,7 +107,6 @@ Respond in JSON format:
   } catch (error) {
     console.error('Generate narration error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to generate narration';
-    console.error('Error details:', errorMessage);
     return NextResponse.json(
       { error: errorMessage },
       { status: 500 }

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { GeminiLiveClient, getAuthToken } from '@/lib/gemini-live';
+import { NovaLiveClient, getAuthToken } from '@/lib/nova-live';
 import { useUserName } from '@/hooks/use-user-name';
 import { useCurrentUser } from '@/hooks/use-current-user';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -134,7 +134,7 @@ export default function AlbumPage() {
   const [tutorialText, setTutorialText] = useState('');
   
   // Live API for tutorial voice
-  const liveClientRef = useRef<GeminiLiveClient | null>(null);
+  const liveClientRef = useRef<NovaLiveClient | null>(null);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [isLiveConnecting, setIsLiveConnecting] = useState(false);
   const [isTutorialSpeaking, setIsTutorialSpeaking] = useState(false);
@@ -428,7 +428,7 @@ export default function AlbumPage() {
       if (!apiKey) throw new Error('Failed to get API credentials');
       
       return new Promise((resolve) => {
-        const client = new GeminiLiveClient(apiKey, {
+        const client = new NovaLiveClient(apiKey, {
           responseModalities: ['AUDIO'],
           systemInstruction: `You are EVA, a warm AI companion for Living Memory. 
 When asked to say something, speak it exactly as written with natural, warm delivery.

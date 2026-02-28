@@ -1,17 +1,16 @@
-// This endpoint provides auth for the Live API
-// In production, you would use a more secure token mechanism
-
+/**
+ * POST /api/live-token
+ *
+ * For Nova 2 Sonic, AWS credentials stay server-side.
+ * This endpoint signals to the client that it should connect to our
+ * WebSocket proxy at /api/nova-sonic/ws rather than directly to a provider.
+ */
 export async function POST() {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return Response.json({ error: 'API key not configured' }, { status: 500 });
-    }
-
-    // Return the API key for Live API connection
-    // In production, consider using ephemeral tokens when available
     return Response.json({
-      apiKey: apiKey,
+      provider: 'nova-sonic',
+      wsEndpoint: '/api/nova-sonic/ws',
+      apiKey: 'server-managed',
     });
   } catch (error) {
     console.error('Failed to get auth token:', error);

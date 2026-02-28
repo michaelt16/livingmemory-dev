@@ -1,38 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI, Part } from '@google/generative-ai';
 import { createServerClient } from '@/lib/supabase/server';
+import { generateWithImages, generateText, fetchImageAsNovaInput, type ImagePart } from '@/lib/nova';
 
-// Fetch image and convert to base64 for Gemini multimodal
-async function fetchImageAsInlineData(url: string): Promise<Part | null> {
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) return null;
-    const buffer = await res.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString('base64');
-    const contentType = res.headers.get('content-type') || 'image/jpeg';
-    const mimeType = contentType.split(';')[0].trim();
-    return { inlineData: { mimeType, data: base64 } };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * POST /api/events/[id]/storybook
- * Generates a woven narrative from album photos, stories, and family perspectives.
- * Now MULTIMODAL — sends actual photo images to Gemini so it can see them.
- */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id: eventId } = await params;
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      return NextResponse.json({ error: 'GEMINI_API_KEY not configured' }, { status: 500 });
-    }
 
     const body = await request.json();
     const { photos, albumTitle, members } = body;
@@ -41,7 +16,6 @@ export async function POST(
       return NextResponse.json({ error: 'No photos provided' }, { status: 400 });
     }
 
-    // If no explicit photos with stories passed, fetch from DB
     let photoData = photos;
     if (!photoData[0]?.summary && !photoData[0]?.story) {
       const supabase = createServerClient();
@@ -74,19 +48,15 @@ export async function POST(
       }
     }
 
-    // ── Fetch all photo images in parallel for multimodal input ──
     const imageUrls: (string | null)[] = photoData.map(
       (p: { url?: string; original_url?: string; thumbnail_url?: string }) =>
         p.url || p.original_url || p.thumbnail_url || null
     );
     const imageParts = await Promise.all(
-      imageUrls.map((url) => (url ? fetchImageAsInlineData(url) : Promise.resolve(null)))
+      imageUrls.map((url) => (url ? fetchImageAsNovaInput(url) : Promise.resolve(null)))
     );
     const hasImages = imageParts.some(Boolean);
     console.log(`Storybook multimodal: ${imageParts.filter(Boolean).length}/${photoData.length} images loaded`);
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
     const membersList = (members || [])
       .map((m: { name: string; relationship?: string }) => `${m.name} (${m.relationship || 'family member'})`)
@@ -143,31 +113,29 @@ Respond with ONLY a valid JSON array (no markdown, no code fences):
 
 Each object must have photoId (matching the photo ID provided), narrationText (the narration for that section), and speakerName (always "Narrator").`;
 
-    // ── Build multimodal parts: images interleaved with labels, then prompt ──
-    const requestParts: Part[] = [];
+    let text: string;
     if (hasImages) {
+      const validImages: ImagePart[] = [];
       photoData.forEach((p: { id: string }, i: number) => {
         const imgPart = imageParts[i];
         if (imgPart) {
-          requestParts.push({ text: `--- Photo ${i + 1} (ID: ${p.id}) ---` });
-          requestParts.push(imgPart);
+          validImages.push({
+            ...imgPart,
+            label: `--- Photo ${i + 1} (ID: ${p.id}) ---`,
+          });
         }
       });
-      requestParts.push({ text: textPrompt });
+      text = await generateWithImages(textPrompt, validImages);
     } else {
-      requestParts.push({ text: textPrompt });
+      text = await generateText(textPrompt);
     }
-
-    console.log('Calling Gemini storybook (multimodal:', hasImages, ') with', requestParts.length, 'parts');
-    const result = await model.generateContent(requestParts);
-    const text = result.response.text().trim();
 
     let sections;
     try {
       const cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
       sections = JSON.parse(cleaned);
     } catch {
-      console.error('Failed to parse Gemini storybook response:', text);
+      console.error('Failed to parse storybook response:', text);
       sections = photoData.map((p: { id: string; summary?: string; story?: string }, i: number) => ({
         photoId: p.id,
         narrationText: p.story || p.summary || `A treasured moment, photo ${i + 1} of this collection.`,

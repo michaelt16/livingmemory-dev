@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { chat } from '@/lib/gemini';
+import { generateText } from '@/lib/nova';
 import { buildConversationPrompt } from '@/lib/prompts';
 import { ConversationMessage, ChatResponse } from '@/lib/types';
 
@@ -20,13 +20,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build conversation history for context
     const conversationHistory = messages.map((m: ConversationMessage) => ({
       role: m.role,
       content: m.content,
     }));
 
-    // Add the new user message
     if (userMessage) {
       conversationHistory.push({
         role: 'user',
@@ -34,10 +32,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Count user turns (for wrap-up guidance)
     const turnCount = conversationHistory.filter((m: { role: string }) => m.role === 'user').length;
 
-    // Build the prompt with full context
     const prompt = buildConversationPrompt(
       JSON.stringify(photoAnalysis, null, 2),
       conversationHistory,
@@ -45,8 +41,8 @@ export async function POST(request: NextRequest) {
       turnCount
     );
 
-    // Get response from Gemini
-    const responseText = await chat(prompt, userMessage || 'Please start the conversation.');
+    const fullPrompt = `${prompt}\n\nElderly Person: ${userMessage || 'Please start the conversation.'}`;
+    const responseText = await generateText(fullPrompt);
 
     // Parse the response to extract the JSON metadata
     const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);

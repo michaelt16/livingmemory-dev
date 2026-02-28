@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import { GeminiLiveClient, getAuthToken } from '@/lib/gemini-live';
+import { NovaLiveClient, getAuthToken } from '@/lib/nova-live';
 import { useTheme } from '@/contexts/ThemeContext';
 
 // EVA components - loaded client-side only
@@ -165,7 +165,7 @@ export default function FamilyPage() {
   const [isEvaConnecting, setIsEvaConnecting] = useState(false);
   const [isEvaSpeaking, setIsEvaSpeaking] = useState(false);
   const [evaMessage, setEvaMessage] = useState('');
-  const evaClientRef = useRef<GeminiLiveClient | null>(null);
+  const evaClientRef = useRef<NovaLiveClient | null>(null);
   
   // New member form
   const [newName, setNewName] = useState('');
@@ -250,7 +250,7 @@ And when your family members send you questions, I'll help them ask about the ri
       const apiKey = auth.apiKey || auth.token;
       if (!apiKey) throw new Error('Failed to get API credentials');
       
-      const client = new GeminiLiveClient(apiKey, {
+      const client = new NovaLiveClient(apiKey, {
         responseModalities: ['AUDIO'],
         systemInstruction: `You are EVA (pronounced EE-vuh), a warm AI companion for Living Memory. You're explaining the upcoming Knowledge Base feature for the Family Tree. Speak naturally, warmly, and conversationally. Keep it engaging but don't ramble. Read this script naturally, adding your own warmth: "${evaKnowledgeBaseScript}"`,
         speechConfig: {
