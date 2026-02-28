@@ -222,7 +222,7 @@ export function findCharacterByName(bank: MemoryBank, name: string): Character |
   );
 }
 
-// Get summary for Gemini context
+// Get summary for Nova context
 export function getMemoryBankSummary(bank: MemoryBank): string {
   if (bank.characters.length === 0) {
     return 'No known family members yet.';

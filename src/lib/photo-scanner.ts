@@ -1,6 +1,6 @@
 /**
  * Photo Scanner - Extracts photos from camera frames
- * Uses Gemini Vision to detect photo boundaries
+ * Uses Nova Vision to detect photo boundaries
  */
 
 interface BoundingBox {
@@ -11,7 +11,7 @@ interface BoundingBox {
 }
 
 /**
- * Ask Gemini to identify the photo location in the frame
+ * Ask Nova to identify the photo location in the frame
  * Returns bounding box coordinates
  */
 export async function getPhotoBoundingBox(
@@ -51,7 +51,7 @@ ONLY return the JSON, nothing else.`
     const data = await response.json();
     
     if (data.error) {
-      console.log('Gemini could not detect photo:', data.error);
+      console.log('Nova could not detect photo:', data.error);
       return null;
     }
 
@@ -64,12 +64,12 @@ ONLY return the JSON, nothing else.`
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         if (parsed.error) {
-          console.log('Gemini response:', parsed.error);
+          console.log('Nova response:', parsed.error);
           return null;
         }
         bbox = parsed;
       } else {
-        console.log('Could not parse Gemini response:', data.response);
+        console.log('Could not parse Nova response:', data.response);
         return null;
       }
     } else {
@@ -88,15 +88,15 @@ ONLY return the JSON, nothing else.`
 
     return null;
   } catch (error) {
-    console.error('Error getting bounding box from Gemini:', error);
+    console.error('Error getting bounding box from Nova:', error);
     return null;
   }
 }
 
 /**
- * Extract photo from frame using Gemini-detected bounding box
+ * Extract photo from frame using Nova-detected bounding box
  */
-export async function extractPhotoWithGemini(
+export async function extractPhotoWithNova(
   videoElement: HTMLVideoElement
 ): Promise<string | null> {
   if (!videoElement || videoElement.videoWidth === 0) {
@@ -113,16 +113,16 @@ export async function extractPhotoWithGemini(
   ctx.drawImage(videoElement, 0, 0);
   const frameDataUrl = canvas.toDataURL('image/jpeg', 0.8);
 
-  // Ask Gemini for the bounding box
-  console.log('Asking Gemini for photo bounding box...');
+  // Ask Nova for the bounding box
+  console.log('Asking Nova for photo bounding box...');
   const bbox = await getPhotoBoundingBox(frameDataUrl);
   
   if (!bbox) {
-    console.log('Gemini could not detect photo boundaries');
+    console.log('Nova could not detect photo boundaries');
     return null;
   }
 
-  console.log('Gemini detected photo at:', bbox);
+  console.log('Nova detected photo at:', bbox);
 
   // Convert normalized coordinates (0-1000) to pixel coordinates
   let x = Math.round((bbox.x / 1000) * canvas.width);

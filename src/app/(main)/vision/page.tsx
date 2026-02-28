@@ -272,7 +272,7 @@ export default function VisionPage() {
               { 
                 step: '02', 
                 title: 'AI Analysis', 
-                desc: 'Gemini 3 analyzes depth, objects, and context',
+                desc: 'Nova analyzes depth, objects, and context',
                 icon: '🧠',
                 color: 'rgba(6,182,212,0.2)'
               },
@@ -351,7 +351,7 @@ export default function VisionPage() {
             Technical Architecture
           </h2>
           <p className={`text-center mb-12 max-w-xl mx-auto ${isDark ? 'text-white/50' : 'text-gray-600'}`}>
-            How Gemini 3 and Google Genie work together
+            How Nova and Google Genie work together
           </p>
 
           {/* Architecture Diagram */}
@@ -392,7 +392,7 @@ export default function VisionPage() {
                   }}
                 >
                   <span className="text-2xl">🧠</span>
-                  <span className="text-cyan-400 text-xs font-semibold">Gemini 3</span>
+                  <span className="text-cyan-400 text-xs font-semibold">Nova</span>
                   <span className={`text-[10px] ${isDark ? 'text-white/30' : 'text-gray-400'}`}>+</span>
                   <span className="text-purple-400 text-xs font-semibold">Genie</span>
                 </div>
@@ -418,7 +418,7 @@ export default function VisionPage() {
             {/* Tech stack */}
             <div className="mt-10 pt-8 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
               <div className="flex flex-wrap justify-center gap-3">
-                {['Gemini 3 Pro', 'Gemini 3 Flash', 'Google Genie', 'WebGL', 'Three.js'].map((tech) => (
+                {['Nova Pro', 'Nova Lite', 'Google Genie', 'WebGL', 'Three.js'].map((tech) => (
                   <span 
                     key={tech}
                     className={`px-3 py-1.5 rounded-lg text-xs ${isDark ? 'text-white/60' : 'text-gray-600'}`}

@@ -18,7 +18,7 @@ const crimsonPro = Crimson_Pro({
 
 export const metadata: Metadata = {
   title: "Living Memory — Where Your Family Stories Become Forever",
-  description: "An AI companion that helps your family capture, preserve, and relive the stories that matter most. Built with Google Gemini.",
+  description: "An AI companion that helps your family capture, preserve, and relive the stories that matter most. Built with Amazon Nova.",
 };
 
 export default function RootLayout({

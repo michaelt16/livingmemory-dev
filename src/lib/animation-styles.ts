@@ -2,7 +2,7 @@
  * Animation style definitions used across the app.
  *
  * Styles that need visual transformation (Disney, etc.) go through:
- *   1. Style-transfer the image (Nano Banana / Gemini)
+ *   1. Style-transfer the image (Nano Banana / Nova)
  *   2. Animate the stylized image with VEO 3 / Grok
  *
  * The image is already generated before animation — prompts stay simple.
@@ -15,7 +15,7 @@ export interface AnimationStyle {
   icon: string;
   /** Whether the photo needs to be visually transformed before animation */
   needsStyleTransfer: boolean;
-  /** Prompt sent to Gemini image generation to transform the photo's look */
+  /** Prompt sent to Nova image generation to transform the photo's look */
   styleTransferPrompt: string;
   /** Prompt for animation — image is already styled, just animate it */
   motionPrompt: string;

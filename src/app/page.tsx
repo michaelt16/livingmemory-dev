@@ -320,7 +320,7 @@ export default function HomePage() {
             <Reveal delay={350}>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-white/20 tracking-widest uppercase">Powered by</span>
-                <span className="text-sm text-white/45">Google Gemini</span>
+                <span className="text-sm text-white/45">Amazon Nova</span>
               </div>
             </Reveal>
           </div>
@@ -344,7 +344,7 @@ export default function HomePage() {
               <p className="text-[15px] text-white/35 leading-relaxed mb-8 max-w-lg">
                 Old albums. Faded prints. Shoeboxes of memories. Point your camera at any
                 photograph and EVA detects, captures, and enhances it — all in real time.
-                Nano Banana, powered by Gemini&apos;s native image output, extracts and
+                Nano Banana, powered by Amazon Nova Canvas, extracts and
                 cleans up each photo to pristine quality.
               </p>
               <div className="flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-white/20">
@@ -400,12 +400,12 @@ export default function HomePage() {
               </h3>
               <p className="text-[15px] text-white/35 leading-relaxed mb-8 max-w-lg">
                 Just talk. Share who&apos;s in the photo, what happened that day, why it
-                matters. EVA listens through Gemini Live, transcribes every word, and
+                matters. EVA listens through Nova Sonic, transcribes every word, and
                 links your stories to each photo. Every family member can add
                 their own perspective.
               </p>
               <div className="flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-white/20">
-                <span>Gemini Live voice</span>
+                <span>Nova Sonic voice</span>
                 <span>AI transcription</span>
                 <span>Multi-perspective stories</span>
               </div>
@@ -612,7 +612,7 @@ export default function HomePage() {
                 Context-aware narrated films
               </h3>
               <p className="text-[15px] text-white/35 leading-relaxed mb-5 max-w-lg">
-                Gemini sees every photo and reads every conversation you&apos;ve had about
+                Nova sees every photo and reads every conversation you&apos;ve had about
                 it — then generates narration that understands the full context. It knows
                 who&apos;s in each frame, what happened, and how each clip connects to the next.
               </p>
@@ -862,8 +862,8 @@ export default function HomePage() {
           <Reveal delay={100}>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-y-10 gap-x-8 md:gap-x-10">
               {[
-                { name: 'Gemini 2.0 Flash', desc: 'Photo understanding, story generation, fact extraction, and Nano Banana image output' },
-                { name: 'Gemini Live', desc: 'Real-time voice conversations — talk to EVA naturally about your memories' },
+                { name: 'Amazon Nova 2 Lite', desc: 'Photo understanding, story generation, fact extraction, and Nova Canvas image output' },
+                { name: 'Nova Sonic', desc: 'Real-time voice conversations — talk to EVA naturally about your memories' },
                 { name: 'Veo 3', desc: 'Transforms static photographs into cinematic animated video' },
                 { name: 'Cloud TTS', desc: 'Text-to-speech narration with multiple voice options' },
                 { name: 'Genie', desc: '3D world generation from photographs (coming soon)' },

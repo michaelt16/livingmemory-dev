@@ -107,7 +107,7 @@ export default function PlaygroundPage() {
   const [liveInput, setLiveInput] = useState('');
   const [isLiveLoading, setIsLiveLoading] = useState(false);
   
-  // Gemini Live API state
+  // Nova Sonic voice state
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMicActive, setIsMicActive] = useState(false);
@@ -140,7 +140,7 @@ export default function PlaygroundPage() {
   // Toast state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   
-  // Bounding boxes state for visual overlay (from Gemini AI)
+  // Bounding boxes state for visual overlay (from Nova AI)
   const [boundingBoxes, setBoundingBoxes] = useState<BoundingBox[]>([]);
   
   
@@ -162,7 +162,7 @@ export default function PlaygroundPage() {
   // Stable callback ref for frame capture to avoid re-renders
   const onFrameCaptureRef = useRef<(frame: string) => void>(() => {});
   onFrameCaptureRef.current = (frame: string) => {
-    // Send frame to Gemini Live if connected
+    // Send frame to Nova Live if connected
     if (liveClientRef.current?.connected) {
       liveClientRef.current.sendVideoFrame(frame);
     }
@@ -362,9 +362,9 @@ export default function PlaygroundPage() {
     loadPhoto();
   }, []);
 
-  // ============ GEMINI LIVE API FUNCTIONS ============
+  // ============ NOVA SONIC LIVE API FUNCTIONS ============
   
-  // Connect to Gemini Live API
+  // Connect to Nova Sonic
   const connectToLiveAPI = async () => {
     if (isConnecting || isLiveConnected) return;
     
@@ -384,9 +384,8 @@ export default function PlaygroundPage() {
       const client = new NovaLiveClient(
         apiKey,
         {
-          // Using gemini-2.5-flash-native-audio-preview-12-2025 which requires AUDIO modality
-          responseModalities: ['AUDIO'],  // AI will respond with voice!
-          systemInstruction: `You are Gemini, a helpful and friendly AI assistant helping preserve family memories. You can see through the user's camera and hear them speak.
+          responseModalities: ['AUDIO'],
+          systemInstruction: `You are EVA, a warm and friendly AI companion helping preserve family memories. You can see through the user's camera and hear them speak.
 
 When you see a physical photograph being shown, include [PHOTO] in your response to save it.
 
@@ -413,7 +412,7 @@ Keep responses natural, conversational, and BRIEF (2-3 sentences max), but ALWAY
         },
         {
           onConnect: () => {
-            console.log('Connected to Gemini Live!');
+            console.log('Connected to Nova Sonic!');
             setIsLiveConnected(true);
             setIsConnecting(false);
             
@@ -448,7 +447,7 @@ Keep responses natural, conversational, and BRIEF (2-3 sentences max), but ALWAY
             updateSession(session.id, { messageIds: [liveMsg.id] });
           },
           onDisconnect: () => {
-            console.log('Disconnected from Gemini Live');
+            console.log('Disconnected from Nova Sonic');
             setIsLiveConnected(false);
             setIsMicActive(false);
           },
@@ -1356,7 +1355,7 @@ Keep responses natural, conversational, and BRIEF (2-3 sentences max), but ALWAY
           </div>
         </header>
 
-        {/* LIVE MODE - Real Gemini Live API */}
+        {/* LIVE MODE - Nova Sonic Live */}
         {mode === 'live' && (
           <>
             <LiveMode 

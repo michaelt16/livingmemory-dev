@@ -14,7 +14,7 @@ interface EVACompanionModalProps {
 
 /**
  * EVA Companion Modal - For creating new albums
- * Uses Gemini Live API for EVA's voice greeting (output only, no mic needed)
+ * Uses Nova Sonic for EVA's voice greeting (output only, no mic needed)
  */
 export default function EVACompanionModal({ isOpen, onClose }: EVACompanionModalProps) {
   const router = useRouter();
@@ -48,7 +48,7 @@ Greet the user warmly in 1-2 sentences. Welcome them and mention you're here to 
 
 Do NOT mention being an AI. Speak naturally as a caring companion. Keep it brief and warm.`;
 
-  // Connect to Gemini Live
+  // Connect to Nova Sonic
   const connect = useCallback(async () => {
     if (isConnecting || isConnected) return;
     

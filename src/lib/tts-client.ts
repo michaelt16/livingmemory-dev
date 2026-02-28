@@ -14,11 +14,11 @@ interface TTSResponse {
 interface TTSOptions {
   voice?: string;
   maxRetries?: number; // For network errors only (rate limits fail fast)
-  useBrowserFallback?: boolean; // Use Web Speech API when Gemini fails
+  useBrowserFallback?: boolean; // Use Web Speech API when TTS fails
 }
 
 /**
- * Browser Speech Synthesis - no rate limits, works when Gemini fails
+ * Browser Speech Synthesis - no rate limits, works when TTS fails
  */
 export function speakWithBrowser(text: string): Promise<number> {
   return new Promise((resolve) => {

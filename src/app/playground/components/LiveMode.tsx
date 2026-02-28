@@ -1,6 +1,6 @@
 /**
  * Live Mode Component
- * Handles Gemini Live API integration, camera, and real-time conversation
+ * Handles Nova Sonic voice integration, camera, and real-time conversation
  */
 
 'use client';
@@ -147,7 +147,7 @@ export default function LiveMode({
       
       const client = new NovaLiveClient(apiKey, {
         responseModalities: ['AUDIO'],
-        systemInstruction: `You are Gemini, a helpful and friendly AI assistant helping preserve family memories. You can see through the user's camera and hear them speak.
+        systemInstruction: `You are EVA, a warm and friendly AI companion helping preserve family memories. You can see through the user's camera and hear them speak.
 
 When you see a physical photograph being shown, include [PHOTO] in your response to save it.
 
@@ -173,10 +173,10 @@ Question strategy:
 Keep responses natural, conversational, and BRIEF (2-3 sentences max), but ALWAYS end with a question to keep the story building.`,
       }, {
         onConnect: () => {
-          console.log('Connected to Gemini Live!');
+          console.log('Connected to Nova Sonic!');
           setIsLiveConnected(true);
           setIsConnecting(false);
-          showToast('✅ Connected to Gemini Live!');
+          showToast('✅ Connected to Nova Sonic!');
           
           // Create new conversation session
           const session: ConversationSession = {
@@ -206,7 +206,7 @@ Keep responses natural, conversational, and BRIEF (2-3 sentences max), but ALWAY
         },
         onDisconnect: () => {
           setIsLiveConnected(false);
-          showToast('❌ Disconnected from Gemini Live');
+          showToast('❌ Disconnected from Nova Sonic');
         },
         onMessage: (message) => {
           const role = message.type === 'model' ? 'assistant' : 'user';
@@ -318,7 +318,7 @@ Keep responses natural, conversational, and BRIEF (2-3 sentences max), but ALWAY
 
   const startMicrophone = async () => {
     if (!liveClientRef.current || !isLiveConnected) {
-      showToast('⚠️ Connect to Gemini Live first');
+      showToast('⚠️ Connect to Nova Sonic first');
       return;
     }
     
@@ -474,7 +474,7 @@ Keep responses natural, conversational, and BRIEF (2-3 sentences max), but ALWAY
               disabled={isConnecting}
               className="w-full py-3 px-6 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl hover:opacity-90 transition-opacity font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isConnecting ? 'Connecting...' : '🔌 Connect to Gemini Live'}
+              {isConnecting ? 'Connecting...' : '🔌 Connect to EVA'}
             </button>
           ) : (
             <>
@@ -598,7 +598,7 @@ Keep responses natural, conversational, and BRIEF (2-3 sentences max), but ALWAY
                 <p className="text-[var(--foreground)] opacity-50">
                   {isLiveConnected 
                     ? 'Connected! Start talking or show photos...'
-                    : 'Connect to Gemini Live to start a conversation'}
+                    : 'Connect to EVA to start a conversation'}
                 </p>
               </div>
             </div>
@@ -612,14 +612,14 @@ Keep responses natural, conversational, and BRIEF (2-3 sentences max), but ALWAY
                   }`}
                 >
                   <p className="text-sm opacity-50 mb-1">
-                    {msg.role === 'user' ? '👤 You' : '🤖 Gemini'}
+                    {msg.role === 'user' ? '👤 You' : '🤖 EVA'}
                   </p>
                   <p className="whitespace-pre-wrap">{msg.content}</p>
                 </div>
               ))}
               {isAISpeaking && (
                 <div className="bubble-ai p-4 rounded-lg mr-8">
-                  <p className="text-sm opacity-50 mb-1">🤖 Gemini</p>
+                  <p className="text-sm opacity-50 mb-1">🤖 EVA</p>
                   <span className="flex gap-1 items-center">
                     <span className="text-purple-500">🔊 Speaking...</span>
                   </span>

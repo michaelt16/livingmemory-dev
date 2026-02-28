@@ -153,7 +153,7 @@ export default function LoginPage() {
 
       {/* Footer */}
       <p className={`absolute bottom-6 text-xs ${isDark ? 'text-white/20' : 'text-gray-300'}`}>
-        Built with Google AI for Gemini API Developer Competition
+        Built with Amazon Nova AI
       </p>
     </div>
   );

@@ -29,7 +29,7 @@ interface PhotoDetectionResult {
 interface ExtractedPhoto {
   imageBase64: string;
   quality: 'excellent' | 'good' | 'acceptable';
-  method: 'gemini-image' | 'perspective-correct' | 'smart-crop' | 'center-crop';
+  method: 'nova-image' | 'perspective-correct' | 'smart-crop' | 'center-crop';
 }
 
 /**
@@ -316,7 +316,7 @@ export async function extractCleanPhoto(imageBase64: string): Promise<ExtractedP
     return {
       imageBase64: generatedImage,
       quality: 'excellent',
-      method: 'gemini-image',
+      method: 'nova-image',
     };
   }
 

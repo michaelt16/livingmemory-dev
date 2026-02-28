@@ -127,7 +127,7 @@ export default function LivingStorybookPage() {
           }
         }
 
-        // Fallback: generate with Gemini if no saved narration
+        // Fallback: generate with Nova if no saved narration
         if (loadedSections.length === 0) {
           setGeneratingStory(true);
           try {

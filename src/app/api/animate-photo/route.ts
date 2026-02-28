@@ -1,17 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { analyzeImage } from '@/lib/nova';
 import { generateVideoWithPolling, VeoVideoConfig } from '@/lib/veo-service';
 import { buildAnimationPrompt } from '@/lib/animation-styles';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-
-/**
- * Check if photo contains minors using Gemini Vision
- */
 async function detectMinors(imageBase64: string): Promise<boolean> {
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-    
     const prompt = `Analyze this photo and determine if it contains any children or minors (people under 18 years old).
 
 Look for:
@@ -21,23 +14,10 @@ Look for:
 
 Respond with ONLY "YES" if minors are detected, or "NO" if no minors are present.`;
 
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: 'image/jpeg',
-          data: imageBase64.replace(/^data:image\/\w+;base64,/, ''),
-        },
-      },
-      prompt,
-    ]);
-
-    const response = await result.response;
-    const text = response.text().toUpperCase().trim();
-    
-    return text.includes('YES');
+    const text = await analyzeImage(imageBase64, prompt);
+    return text.toUpperCase().trim().includes('YES');
   } catch (error) {
     console.error('Minor detection error:', error);
-    // If detection fails, assume no minors (safer to animate)
     return false;
   }
 }

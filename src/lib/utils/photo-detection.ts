@@ -1,5 +1,5 @@
 /**
- * Photo detection utilities using Gemini Vision API
+ * Photo detection utilities using Nova Vision API
  */
 
 export interface PhotoDetectionResult {

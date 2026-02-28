@@ -596,7 +596,7 @@ BLURRY OR UNCLEAR IMAGES:
     return instruction;
   }, []);
 
-  // Connect to Gemini Live
+  // Connect to Nova Sonic
   const connect = useCallback(async () => {
     if (isConnecting || isConnected) return;
     

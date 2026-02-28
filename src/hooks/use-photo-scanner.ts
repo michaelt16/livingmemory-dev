@@ -3,7 +3,7 @@
  */
 
 import { useState, useRef, useCallback } from 'react';
-import { extractPhotoWithGemini, captureFullFrame } from '@/lib/photo-scanner';
+import { extractPhotoWithNova, captureFullFrame } from '@/lib/photo-scanner';
 import { computeImageHash } from '@/lib/utils/image-utils';
 import { checkPhotoInFrame } from '@/lib/utils/photo-detection';
 import { detectMotion } from '@/lib/utils/image-utils';
@@ -63,12 +63,12 @@ export function usePhotoScanner({ videoRef, currentFrameRef, onToast }: UsePhoto
     
     let frame: string | null = null;
     
-    // Try Gemini-powered extraction first
+    // Try Nova-powered extraction first
     if (videoRef.current) {
       try {
-        frame = await extractPhotoWithGemini(videoRef.current);
+        frame = await extractPhotoWithNova(videoRef.current);
       } catch (error) {
-        console.log('Gemini extraction failed:', error);
+        console.log('Nova extraction failed:', error);
       }
     }
     
