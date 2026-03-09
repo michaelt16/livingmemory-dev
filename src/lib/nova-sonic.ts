@@ -20,7 +20,7 @@ import {
 } from '@aws-sdk/client-bedrock-runtime';
 import { NodeHttp2Handler } from '@smithy/node-http-handler';
 
-const NOVA_SONIC_MODEL_ID = process.env.NOVA_SONIC_MODEL_ID || 'amazon.nova-sonic-v2:0';
+const NOVA_SONIC_MODEL_ID = process.env.NOVA_SONIC_MODEL_ID || 'amazon.nova-2-sonic-v1:0';
 
 export interface NovaSonicCallbacks {
   onAudio?: (audioBase64: string) => void;

@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import EVAOrb from '@/components/EVAOrb';
 import { AuroraWave } from '@/components/capture/AuroraWave';
-import { NovaLiveClient, getAuthToken } from '@/lib/nova-live';
 
 // EVA's script - combined into continuous speech blocks for natural flow
 // Each line is spoken as one continuous audio clip
@@ -105,7 +104,6 @@ export default function IntroPage() {
   const [userName, setUserName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   
   // Tutorial flow after name
   const [tutorialPhase, setTutorialPhase] = useState<'none' | 'greeting' | 'options' | 'album-name' | 'creating'>('none');
@@ -113,16 +111,9 @@ export default function IntroPage() {
   const [isCreatingAlbum, setIsCreatingAlbum] = useState(false);
   const [albumName, setAlbumName] = useState('');
   
-  // Live API refs
-  const liveClientRef = useRef<NovaLiveClient | null>(null);
-  const [isLiveConnected, setIsLiveConnected] = useState(false);
-  const [isLiveConnecting, setIsLiveConnecting] = useState(false);
+  // Audio refs
   const [isAISpeaking, setIsAISpeaking] = useState(false);
-  const pendingAdvanceRef = useRef(false); // Flag to advance on turn complete
-  const pendingTextRef = useRef<string | null>(null); // Text to type when audio starts
-  const pendingCallbackRef = useRef<(() => void) | null>(null); // Callback for tutorial flow
-  const useTutorialTextRef = useRef(false); // Whether to use tutorialText state (for tutorial phase)
-  const pendingNavigateRef = useRef<{ albumId: string; phase: 'name_response' | 'redirect_message' } | null>(null); // For two-phase navigation
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   
   // Typewriter effect
   const typewriterRef = useRef<NodeJS.Timeout | null>(null);
@@ -130,150 +121,72 @@ export default function IntroPage() {
   const tutorialIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const introStartedRef = useRef(false);
   
-  // Connect to Live API for voice narration
-  const connectLiveAPI = useCallback(async (): Promise<boolean> => {
-    if (isLiveConnecting || isLiveConnected) return isLiveConnected;
-    
-    setIsLiveConnecting(true);
-    
+  // Polly TTS: fetch audio, play it, run typewriter synced to duration, call onDone when finished
+  const speakWithPolly = useCallback(async (
+    text: string,
+    opts: { useTutorialText?: boolean; onDone?: () => void } = {}
+  ) => {
+    const { useTutorialText = false, onDone } = opts;
     try {
-      const auth = await getAuthToken();
-      const apiKey = auth.apiKey || auth.token;
-      if (!apiKey) throw new Error('Failed to get API credentials');
+      setIsAISpeaking(true);
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice: { name: 'Ruth' } }),
+      });
+      if (!res.ok) throw new Error('TTS request failed');
+      const data = await res.json();
+      const audioSrc = `data:${data.mime_type};base64,${data.audio_base64}`;
       
-      return new Promise((resolve) => {
-        const client = new NovaLiveClient(apiKey, {
-          responseModalities: ['AUDIO'],
-          systemInstruction: `You are EVA, a warm AI companion for Living Memory. 
-When asked to say something, speak it exactly as written with natural, warm delivery.
-Keep responses brief and emotional. Do not add any extra commentary.`,
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: 'Kore',
-              },
-            },
-          },
-        }, {
-          onConnect: () => {
-            console.log('[EVA Intro] Live API connected successfully');
-            setIsLiveConnected(true);
-            setIsLiveConnecting(false);
-            liveClientRef.current = client;
-            resolve(true);
-          },
-          onDisconnect: () => {
-            setIsLiveConnected(false);
-          },
-          onAudio: () => {
-            console.log('[EVA Intro] Audio received, starting playback');
-            setIsAISpeaking(true);
-            // Start typewriter when audio starts (syncs text with voice)
-            if (pendingTextRef.current) {
-              const text = pendingTextRef.current;
-              const useTutorialText = useTutorialTextRef.current;
-              pendingTextRef.current = null;
-              console.log('[EVA Intro] Starting typewriter for:', text.substring(0, 50) + '...');
-              // Estimate duration based on text length (~60ms per char for Live API)
-              const estimatedDuration = Math.max(3000, text.length * 60);
-              // Dispatch event to trigger typewriter (avoids stale closure)
-              window.dispatchEvent(new CustomEvent('eva-start-typing', { 
-                detail: { text, duration: estimatedDuration, useTutorialText } 
-              }));
-            }
-          },
-          onTurnComplete: () => {
-            setIsAISpeaking(false);
-            // If we're waiting to advance scene, do it now
-            // Add delay to ensure audio buffer finishes playing
-            if (pendingAdvanceRef.current) {
-              pendingAdvanceRef.current = false;
-              setTimeout(() => {
-                setCurrentLineIndex(prev => prev + 1);
-              }, 800); // Wait for audio buffer to finish
-            }
-            // Handle two-phase navigation (like album modal)
-            if (pendingNavigateRef.current) {
-              const pending = pendingNavigateRef.current;
-              if (pending.phase === 'name_response') {
-                // EVA responded to the name, now say redirect message
-                const redirectText = "Give me a moment—I'll take you to the editor now.";
-                pendingTextRef.current = redirectText;
-                useTutorialTextRef.current = true;
-                client.sendText(`Say exactly: "${redirectText}"`);
-                pending.phase = 'redirect_message';
-              } else if (pending.phase === 'redirect_message') {
-                // EVA said redirect message, now navigate
-                pendingNavigateRef.current = null;
-                // Use window dispatch to call router (avoids stale closure)
-                window.dispatchEvent(new CustomEvent('eva-navigate', { 
-                  detail: { albumId: pending.albumId } 
-                }));
-              }
-              return;
-            }
-            // If there's a tutorial callback, call it
-            if (pendingCallbackRef.current) {
-              const cb = pendingCallbackRef.current;
-              pendingCallbackRef.current = null;
-              cb();
-            }
-          },
-          onError: (error) => {
-            console.error('[EVA Intro] Live API error:', error);
-            setIsLiveConnecting(false);
-            resolve(false);
-          },
-        });
+      return new Promise<void>((resolve) => {
+        const audio = new Audio(audioSrc);
+        audioRef.current = audio;
         
-        client.connect().catch(() => {
-          setIsLiveConnecting(false);
-          resolve(false);
+        audio.onloadedmetadata = () => {
+          const durationMs = (audio.duration || 3) * 1000;
+          // Start typewriter synced to audio duration
+          window.dispatchEvent(new CustomEvent('eva-start-typing', {
+            detail: { text, duration: durationMs, useTutorialText }
+          }));
+        };
+        
+        audio.onended = () => {
+          setIsAISpeaking(false);
+          audioRef.current = null;
+          onDone?.();
+          resolve();
+        };
+        
+        audio.onerror = () => {
+          setIsAISpeaking(false);
+          audioRef.current = null;
+          onDone?.();
+          resolve();
+        };
+        
+        audio.play().catch(() => {
+          setIsAISpeaking(false);
+          audioRef.current = null;
+          onDone?.();
+          resolve();
         });
       });
-    } catch (error) {
-      console.error('Failed to connect Live API:', error);
-      setIsLiveConnecting(false);
-      return false;
+    } catch (err) {
+      console.error('[EVA Intro] Polly TTS error:', err);
+      setIsAISpeaking(false);
+      // Fallback: just run typewriter without audio
+      const durationMs = Math.max(3000, text.length * 60);
+      window.dispatchEvent(new CustomEvent('eva-start-typing', {
+        detail: { text, duration: durationMs, useTutorialText }
+      }));
+      await new Promise(r => setTimeout(r, durationMs + 500));
+      onDone?.();
     }
-  }, [isLiveConnecting, isLiveConnected]);
-  
-  // Disconnect Live API
-  const disconnectLiveAPI = useCallback(() => {
-    if (liveClientRef.current) {
-      liveClientRef.current.disconnect();
-      liveClientRef.current = null;
-    }
-    setIsLiveConnected(false);
-  }, []);
-  
-  // Send text to Live API for EVA to speak
-  // Set pendingAdvance=true for intro scenes, false for tutorial (uses callback instead)
-  const speakWithLiveAPI = useCallback((text: string, pendingAdvance: boolean = true, onComplete?: () => void) => {
-    if (!liveClientRef.current?.connected) return false;
-    // Store text to type when audio starts (syncs with voice)
-    pendingTextRef.current = text;
-    pendingAdvanceRef.current = pendingAdvance;
-    if (onComplete) {
-      pendingCallbackRef.current = onComplete;
-    }
-    // Tell EVA to say the line exactly
-    liveClientRef.current.sendText(`Say exactly: "${text}"`);
-    return true;
   }, []);
   
   
-  // Start the intro - connect to Live API
+  // Start the intro
   const startIntro = useCallback(async () => {
-    // Connect to Live API first
-    setIsGeneratingAudio(true);
-    const connected = await connectLiveAPI();
-    setIsGeneratingAudio(false);
-    
-    if (!connected) {
-      console.warn('Live API connection failed, proceeding without voice');
-    }
-    
     setCurrentSceneIndex(0);
     setCurrentLineIndex(0);
     
@@ -282,7 +195,7 @@ Keep responses brief and emotional. Do not add any extra commentary.`,
       setOrbVisible(true);
       setTimeout(() => setOrbScale(1), 100);
     }, 300);
-  }, [connectLiveAPI]);
+  }, []);
   
   // Typewriter effect for text - synced to audio duration
   const typeText = useCallback((text: string, audioDurationMs: number, onComplete: () => void, useTutorialText: boolean = false) => {
@@ -346,18 +259,7 @@ Keep responses brief and emotional. Do not add any extra commentary.`,
     };
   }, [typeText]);
   
-  // Listen for eva-navigate events (triggered when EVA finishes redirect message)
-  useEffect(() => {
-    const handleNavigate = (e: CustomEvent<{ albumId: string }>) => {
-      disconnectLiveAPI();
-      router.push(`/album/${e.detail.albumId}?tutorial=true`);
-    };
-    
-    window.addEventListener('eva-navigate', handleNavigate as EventListener);
-    return () => {
-      window.removeEventListener('eva-navigate', handleNavigate as EventListener);
-    };
-  }, [router, disconnectLiveAPI]);
+  
   
   // Process current line
   useEffect(() => {
@@ -383,31 +285,15 @@ Keep responses brief and emotional. Do not add any extra commentary.`,
     
     // Delay before starting this line
     sceneTimeoutRef.current = setTimeout(async () => {
-      // Use Live API: Send text to EVA, advance happens via onTurnComplete
-      if (liveClientRef.current?.connected) {
-        console.log('[EVA Intro] Speaking line via Live API:', line.text.substring(0, 50) + '...');
-        // Use displayedText (not tutorialText) for intro scenes
-        useTutorialTextRef.current = false;
-        // Send to Live API - typewriter starts when onAudio fires (synced with voice)
-        // onTurnComplete will advance to next line
-        speakWithLiveAPI(line.text, true);
-        return;
-      }
+      console.log('[EVA Intro] Speaking line:', line.text.substring(0, 50) + '...');
       
-      // Live API not connected - fallback to text-only with timing
-      console.log('[EVA Intro] Live API not connected, using text-only fallback');
-      
-      let advanced = false;
-      const advanceToNext = () => {
-        if (advanced) return;
-        advanced = true;
-        setCurrentLineIndex(prev => prev + 1);
-      };
-      
-      // Typewriter runs with estimated duration
-      typeText(line.text, line.duration || 5000, () => {
-        // Advance after brief pause
-        setTimeout(advanceToNext, 800);
+      await speakWithPolly(line.text, {
+        useTutorialText: false,
+        onDone: () => {
+          setTimeout(() => {
+            setCurrentLineIndex(prev => prev + 1);
+          }, 800);
+        },
       });
     }, line.delay);
     
@@ -415,7 +301,7 @@ Keep responses brief and emotional. Do not add any extra commentary.`,
       if (typewriterRef.current) clearTimeout(typewriterRef.current);
       if (sceneTimeoutRef.current) clearTimeout(sceneTimeoutRef.current);
     };
-  }, [currentSceneIndex, currentLineIndex, typeText, speakWithLiveAPI]);
+  }, [currentSceneIndex, currentLineIndex, typeText, speakWithPolly]);
   
   // Handle name submission - start tutorial flow
   const handleNameSubmit = useCallback(async (e: React.FormEvent) => {
@@ -460,39 +346,13 @@ Keep responses brief and emotional. Do not add any extra commentary.`,
     }
     setTutorialText('');
     
-    // Use Live API if connected
-    if (liveClientRef.current?.connected) {
-      // Store text for tutorial display (onAudio will trigger typing)
-      pendingTextRef.current = greetingText;
-      useTutorialTextRef.current = true; // Use tutorialText state for display
-      pendingAdvanceRef.current = false; // Don't advance scene index
-      pendingCallbackRef.current = () => {
-        // Show options after EVA finishes speaking
+    speakWithPolly(greetingText, {
+      useTutorialText: true,
+      onDone: () => {
         setTimeout(() => setTutorialPhase('options'), 300);
-      };
-      // Tell EVA to greet the user
-      liveClientRef.current.sendText(`Say exactly: "${greetingText}"`);
-      return;
-    }
-    
-    // Fallback: typewriter without voice
-    const chars = greetingText.split('');
-    let i = 0;
-    tutorialIntervalRef.current = setInterval(() => {
-      if (i < chars.length) {
-        const ch = chars[i];
-        setTutorialText(prev => (prev ?? '') + (ch ?? ''));
-        i++;
-      } else {
-        if (tutorialIntervalRef.current) {
-          clearInterval(tutorialIntervalRef.current);
-          tutorialIntervalRef.current = null;
-        }
-        // Show options after text completes
-        setTimeout(() => setTutorialPhase('options'), 500);
-      }
-    }, 30);
-  }, [userName, inviteCode]);
+      },
+    });
+  }, [userName, inviteCode, speakWithPolly]);
   
   // Handle tutorial option: Start preserving - ask for album name
   const handleStartTutorial = useCallback(() => {
@@ -508,32 +368,8 @@ Keep responses brief and emotional. Do not add any extra commentary.`,
     const askText = "What would you like to call this memory collection?";
     setTutorialText('');
     
-    // Use Live API if connected
-    if (liveClientRef.current?.connected) {
-      pendingTextRef.current = askText;
-      useTutorialTextRef.current = true;
-      pendingAdvanceRef.current = false; // Don't advance scene index
-      pendingCallbackRef.current = null; // No callback - just wait for user to enter name
-      liveClientRef.current.sendText(`Say exactly: "${askText}"`);
-      return;
-    }
-    
-    // Fallback: typewriter without voice
-    const chars = askText.split('');
-    let i = 0;
-    tutorialIntervalRef.current = setInterval(() => {
-      if (i < chars.length) {
-        const ch = chars[i];
-        setTutorialText(prev => (prev ?? '') + (ch ?? ''));
-        i++;
-      } else {
-        if (tutorialIntervalRef.current) {
-          clearInterval(tutorialIntervalRef.current);
-          tutorialIntervalRef.current = null;
-        }
-      }
-    }, 30);
-  }, [userName]);
+    speakWithPolly(askText, { useTutorialText: true });
+  }, [userName, speakWithPolly]);
   
   // Handle album name submission - create the album
   const handleAlbumNameSubmit = useCallback(async (e: React.FormEvent) => {
@@ -559,20 +395,13 @@ Keep responses brief and emotional. Do not add any extra commentary.`,
         localStorage.setItem('tutorialMode', 'true');
         localStorage.setItem('tutorialStep', '0');
         
-        // Use Live API: EVA responds to album name, then says redirect message, then navigate
-        if (liveClientRef.current?.connected) {
-          // Set up two-phase navigation
-          pendingNavigateRef.current = { albumId: data.id, phase: 'name_response' };
-          pendingAdvanceRef.current = false;
-          pendingCallbackRef.current = null;
-          // Tell EVA about the album name - she'll respond, then onTurnComplete handles the rest
-          liveClientRef.current.sendText(`The user just created an album called "${albumName.trim()}". Say something brief and excited about the name.`);
-        } else {
-          // Fallback: transition after delay
-          setTimeout(() => {
+        const redirectText = "Great choice! Give me a moment — I'll take you to the editor now.";
+        await speakWithPolly(redirectText, {
+          useTutorialText: true,
+          onDone: () => {
             router.push(`/album/${data.id}?tutorial=true`);
-          }, 1500);
-        }
+          },
+        });
       } else {
         // Fallback to album list
         router.push('/album');
@@ -580,25 +409,24 @@ Keep responses brief and emotional. Do not add any extra commentary.`,
     } catch {
       router.push('/album');
     }
-  }, [albumName, router, disconnectLiveAPI]);
+  }, [albumName, router, speakWithPolly]);
   
   // Handle tutorial option: Just browse
   const handleSkipTutorial = useCallback(() => {
-    disconnectLiveAPI();
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     setIsTransitioning(true);
     setTimeout(() => {
       router.push('/album');
     }, 1000);
-  }, [router, disconnectLiveAPI]);
+  }, [router]);
   
   // Skip intro — jump straight to registration form
   const handleSkip = useCallback(() => {
-    disconnectLiveAPI();
-    // Jump to the last scene so the name input shows
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     setCurrentSceneIndex(SCENES.length - 1);
     setCurrentLineIndex(SCENES[SCENES.length - 1].lines.length);
     setShowNameInput(true);
-  }, [disconnectLiveAPI]);
+  }, []);
   
   // Keep startIntro in a ref so we can call it from mount effect without re-running
   const startIntroRef = useRef(startIntro);
@@ -619,12 +447,12 @@ Keep responses brief and emotional. Do not add any extra commentary.`,
     };
   }, []);
   
-  // Cleanup Live API on unmount
+  // Cleanup audio on unmount
   useEffect(() => {
     return () => {
-      if (liveClientRef.current) {
-        liveClientRef.current.disconnect();
-        liveClientRef.current = null;
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
       }
     };
   }, []);

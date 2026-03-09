@@ -25,6 +25,8 @@ export interface LiveConfig {
   model?: string;
   systemInstruction?: string;
   voiceId?: string;
+  /** When true, no microphone/audio input — TTS only (avoids Nova's 55s "waiting for audio" timeout) */
+  textOnly?: boolean;
   responseModalities?: ('AUDIO' | 'TEXT')[];
   speechConfig?: {
     voiceConfig?: {
@@ -97,6 +99,7 @@ export class NovaLiveClient {
             config: {
               systemInstruction: this.config.systemInstruction,
               voiceId: this.config.voiceId,
+              textOnly: this.config.textOnly,
             },
           };
           this.ws!.send(JSON.stringify(setup));

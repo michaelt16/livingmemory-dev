@@ -2,8 +2,7 @@
  * POST /api/live-token
  *
  * For Nova 2 Sonic, AWS credentials stay server-side.
- * This endpoint signals to the client that it should connect to our
- * WebSocket proxy at /api/nova-sonic/ws rather than directly to a provider.
+ * Returns proxy endpoint so the client connects to our WebSocket at /api/nova-sonic/ws.
  */
 export async function POST() {
   try {
