@@ -2,13 +2,22 @@
  * Style-transfer API for Disney, Ghibli, Anime, LEGO.
  * Uses Gemini image generation (same as nano-banana art pipeline) when
  * GEMINI_API_KEY is set for higher quality; falls back to Nova Canvas otherwise.
+ *
+ * Saves previews to Supabase inline (instead of calling /api/photos/.../style-previews via HTTP)
+ * to avoid serverless self-referencing deadlocks on hosted platforms.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { generateImageVariation } from '@/lib/nova-canvas';
 import { getAnimationStyle } from '@/lib/animation-styles';
+import { createClient } from '@supabase/supabase-js';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 /** Generate stylized image via Gemini (same pipeline as nano-banana art). */
 async function generateStylizedWithGemini(
@@ -163,29 +172,74 @@ export async function POST(request: NextRequest) {
     const savedPreviews: { id?: string; imageUrl?: string; imageBase64: string; mimeType: string; model: string }[] = [];
 
     if (photoId) {
-      const origin = request.nextUrl.origin;
+      // Get the photo's event_id for storage path
+      const { data: photo } = await supabase
+        .from('photos')
+        .select('id, event_id')
+        .eq('id', photoId)
+        .single();
+
       for (let i = 0; i < previews.length; i++) {
         const p = previews[i];
+        if (!photo) {
+          savedPreviews.push({ imageBase64: p.imageBase64, mimeType: p.mimeType, model: p.model });
+          continue;
+        }
         try {
-          const saveRes = await fetch(`${origin}/api/photos/${photoId}/style-previews`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              styleId: style.id,
+          const shouldSelect = i === 0 && count <= 2;
+
+          // Upload image to Supabase storage
+          const buffer = Buffer.from(p.imageBase64, 'base64');
+          const ext = p.mimeType.includes('png') ? 'png' : 'jpg';
+          const fileName = `${photo.event_id}/style-previews/${photoId}_${style.id}_${Date.now()}_${i}.${ext}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from('event-photos')
+            .upload(fileName, buffer, { contentType: p.mimeType, upsert: false });
+
+          if (uploadError) {
+            console.error(`[stylize] Upload error for preview ${i + 1}:`, uploadError);
+            savedPreviews.push({ imageBase64: p.imageBase64, mimeType: p.mimeType, model: p.model });
+            continue;
+          }
+
+          const { data: urlData } = supabase.storage.from('event-photos').getPublicUrl(fileName);
+          const imageUrl = urlData.publicUrl;
+
+          // Deselect existing previews if this one should be selected
+          if (shouldSelect) {
+            await supabase
+              .from('style_previews')
+              .update({ is_selected: false })
+              .eq('photo_id', photoId)
+              .eq('style_id', style.id);
+          }
+
+          // Insert DB record
+          const { data: preview, error: insertError } = await supabase
+            .from('style_previews')
+            .insert({
+              photo_id: photoId,
+              style_id: style.id,
+              image_url: imageUrl,
+              is_selected: shouldSelect,
+              model: p.model || null,
+            })
+            .select()
+            .single();
+
+          if (insertError) {
+            console.error(`[stylize] DB insert error for preview ${i + 1}:`, insertError);
+            savedPreviews.push({ imageUrl, imageBase64: p.imageBase64, mimeType: p.mimeType, model: p.model });
+          } else {
+            savedPreviews.push({
+              id: preview.id,
+              imageUrl: preview.image_url,
               imageBase64: p.imageBase64,
               mimeType: p.mimeType,
               model: p.model,
-              select: i === 0 && count <= 2,
-            }),
-          });
-          const saveData = saveRes.ok ? await saveRes.json() : null;
-          savedPreviews.push({
-            id: saveData?.preview?.id,
-            imageUrl: saveData?.preview?.image_url,
-            imageBase64: p.imageBase64,
-            mimeType: p.mimeType,
-            model: p.model,
-          });
+            });
+          }
         } catch (saveErr) {
           console.error(`[stylize] Failed to save preview ${i + 1}:`, saveErr);
           savedPreviews.push({ imageBase64: p.imageBase64, mimeType: p.mimeType, model: p.model });

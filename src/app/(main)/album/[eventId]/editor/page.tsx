@@ -1055,8 +1055,27 @@ Keep responses brief. Do not add any extra commentary.`,
           ? stylizedImageBase64
           : `data:image/jpeg;base64,${stylizedImageBase64}`;
         if (provider === 'grok') {
-          // Grok needs a public URL — use the stylized URL if available, else fall back to original
-          imagePayload.photoUrl = stylizedImageUrl || photo.original_url;
+          // Grok needs a public URL. If we have a stored URL use it; otherwise
+          // upload the styled image to get a public URL so Grok animates the
+          // correct (styled) image instead of falling back to the original.
+          let grokUrl = stylizedImageUrl;
+          if (!grokUrl) {
+            try {
+              const cleanB64 = stylizedImageBase64.replace(/^data:image\/\w+;base64,/, '');
+              const uploadRes = await fetch(`/api/photos/${photoId}/style-previews`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ styleId: animationStyle, imageBase64: cleanB64, mimeType: 'image/jpeg', select: false }),
+              });
+              if (uploadRes.ok) {
+                const uploadData = await uploadRes.json();
+                grokUrl = uploadData?.preview?.image_url;
+              }
+            } catch {
+              // Fall through to original URL
+            }
+          }
+          imagePayload.photoUrl = grokUrl || photo.original_url;
         }
       } else if (stylizedImageUrl) {
         // Stored style preview — pass URL (VEO route fetches and converts)
@@ -2242,7 +2261,7 @@ Keep responses brief. Do not add any extra commentary.`,
                         </div>
                         
                         {/* Version selector */}
-                        {hasAnimation && versions.length > 1 && (
+                        {hasAnimation && versions.length >= 1 && (
                           <div className="flex gap-1 overflow-x-auto pb-1">
                             {versions.map((v, i) => (
                               <button
@@ -2578,7 +2597,7 @@ Keep responses brief. Do not add any extra commentary.`,
                         </div>
                         
                         {/* Version selector */}
-                        {hasAnimation && versions.length > 1 && (
+                        {hasAnimation && versions.length >= 1 && (
                           <div className="flex gap-1 overflow-x-auto pb-1">
                             {versions.map((v, i) => (
                               <button
