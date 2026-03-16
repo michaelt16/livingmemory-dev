@@ -24,8 +24,12 @@ export async function POST(request: Request) {
     const hasImages = imageParts.some(Boolean);
     console.log(`Multimodal narration: ${imageParts.filter(Boolean).length}/${clips.length} images loaded`);
 
-    const clipsDescription = clips.map((clip: { order: number; story: string; hasAnimation: boolean; perspectives?: Array<{ memberName: string; quote: string }> }, i: number) => {
-      const parts = [`Clip ${clip.order}: ${clip.story}${clip.hasAnimation ? ' (has video animation)' : ' (static photo)'}`];
+    const clipsDescription = clips.map((clip: { order: number; story: string; hasStory: boolean; hasAnimation: boolean; perspectives?: Array<{ memberName: string; quote: string }> }, i: number) => {
+      const hasRealStory = clip.hasStory !== false && clip.story && clip.story !== 'No story provided';
+      const storyLine = hasRealStory
+        ? clip.story
+        : '[NO STORY YET — this photo has not been discussed. Generate a brief placeholder based on the photo if an image is attached, otherwise write "..." as the narration.]';
+      const parts = [`Clip ${clip.order}: ${storyLine}${clip.hasAnimation ? ' (has video animation)' : ' (static photo)'}`];
       if (clip.perspectives && clip.perspectives.length > 0) {
         clip.perspectives.forEach((p: { memberName: string; quote: string }) => {
           parts.push(`  ${p.memberName}'s perspective: "${p.quote}"`);
@@ -60,10 +64,11 @@ Guidelines:
 - Add emotional weight. What did this moment MEAN? Why does it matter?
 ${hasImages ? '- Reference specific things you SEE in the photos — a color, an expression, a setting, an object. This makes the narration feel personal and real.' : '- Never describe the photo ("In this photo we see..."). Instead, tell us what we can\'t see — the feelings, the context, the before and after.'}
 - Avoid clichés like "cherished memories" or "precious moments." Be specific and real.
+- CRITICAL: The clipTexts array MUST have EXACTLY ${clips.length} entries — one per clip, in order. Clip 1 = index 0, Clip 2 = index 1, etc. Never skip or merge clips. For clips marked [NO STORY YET], output "..." as their narration text.
 
 Respond in JSON format:
 {
-  "narration": "The full combined narration text",
+  "narration": "The full combined narration text (skip clips with no story)",
   "clipTexts": ["Narration for clip 1", "Narration for clip 2", ...]
 }`;
 

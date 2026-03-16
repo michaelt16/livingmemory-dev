@@ -1423,7 +1423,7 @@ Keep responses natural, conversational, and BRIEF (2-3 sentences max), but ALWAY
                         />
                         {processedImage && !hasMinors && (
                           <div className="absolute top-1 right-1 bg-green-500 text-white text-xs px-1 rounded">
-                            ✨ Enhanced
+                            🍌 Nano Banana
                           </div>
                         )}
                         {hasMinors && (
@@ -1644,16 +1644,16 @@ Keep responses natural, conversational, and BRIEF (2-3 sentences max), but ALWAY
                           <div className="pt-2 border-t border-blue-200">
                             <button
                               onClick={() => {
-                                // Use Google TTS (free, no cloning needed)
-                                setVoiceProfile({ id: 'google', name: 'Google TTS (Free)', createdAt: Date.now() });
-                                showToast('✅ Using Google TTS (free pre-built voice)');
+                                // Use Cloud TTS (free, no cloning needed)
+                                setVoiceProfile({ id: 'google', name: 'Cloud TTS (Free)', createdAt: Date.now() });
+                                showToast('✅ Using Cloud TTS (free pre-built voice)');
                               }}
                               className="w-full py-2 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
                             >
-                              🆓 Use Google TTS (Free - No Cloning)
+                              🆓 Use Cloud TTS (Free - No Cloning)
                             </button>
                             <p className="text-xs text-purple-600 mt-1">
-                              Uses Google's natural pre-built voices (free tier: 4M chars/month)
+                              Uses natural pre-built voices (free tier: 4M chars/month)
                             </p>
                           </div>
                           {voiceSampleFile && (
@@ -1662,7 +1662,7 @@ Keep responses natural, conversational, and BRIEF (2-3 sentences max), but ALWAY
                             </p>
                           )}
                           <p className="text-xs text-blue-600">
-                            Option 1: Record 30-60s for ElevenLabs cloning ($5/mo) • Option 2: Use Google TTS (free)
+                            Option 1: Record 30-60s for ElevenLabs cloning ($5/mo) • Option 2: Use Cloud TTS (free)
                           </p>
                         </div>
                       ) : (

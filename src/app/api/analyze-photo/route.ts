@@ -18,8 +18,11 @@ export async function POST(request: NextRequest) {
 
     const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
 
+    console.log(`[analyze-photo] Received image: ${base64Data.length} chars base64, prompt: ${prompt ? prompt.substring(0, 60) + '...' : 'none (full analysis)'}`);
+
     if (prompt) {
       const response = await askAboutImage(base64Data, prompt, mimeType || 'image/jpeg');
+      console.log(`[analyze-photo] Response (prompt mode): ${(response || '').substring(0, 200)}`);
       return NextResponse.json({ response });
     }
 
@@ -28,9 +31,10 @@ export async function POST(request: NextRequest) {
       mimeType || 'image/jpeg'
     );
 
+    console.log(`[analyze-photo] Analysis result:`, JSON.stringify(analysis).substring(0, 300));
     return NextResponse.json({ analysis });
   } catch (error) {
-    console.error('Photo analysis error:', error);
+    console.error('[analyze-photo] Error:', error);
     return NextResponse.json(
       { error: 'Failed to analyze photo' },
       { status: 500 }

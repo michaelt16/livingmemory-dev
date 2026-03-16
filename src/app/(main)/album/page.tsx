@@ -3,9 +3,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import AlbumModal from '@/components/AlbumModal';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useCreateAlbum } from '@/contexts/CreateAlbumContext';
+import { useCurrentUser } from '@/hooks/use-current-user';
+
+const STORAGE_KEY_STORYBOOK_NARRATOR = 'storybook_narrator_voice';
+
+const ScrapbookModal = dynamic(
+  () => import('@/components/ScrapbookModal'),
+  { ssr: false }
+);
 
 // ============================================================================
 // TYPES & DATA
@@ -29,6 +38,12 @@ interface Album {
   perspectiveCount?: number;
   featuredQuote?: string;
   featuredQuoteAuthor?: string;
+}
+
+interface NarratorVoice {
+  id: string;
+  label: string;
+  type: 'polly' | 'cloned';
 }
 
 function eventToAlbum(e: any): Album {
@@ -92,10 +107,27 @@ function formatTime(seconds: number): string {
 // MAIN PAGE
 // ============================================================================
 
+const POLLY_NARRATOR_VOICES: NarratorVoice[] = [
+  { id: 'Ruth', label: 'Ruth', type: 'polly' },
+  { id: 'Matthew', label: 'Matthew', type: 'polly' },
+  { id: 'Danielle', label: 'Danielle', type: 'polly' },
+  { id: 'Gregory', label: 'Gregory', type: 'polly' },
+  { id: 'Stephen', label: 'Stephen', type: 'polly' },
+  { id: 'Joanna', label: 'Joanna', type: 'polly' },
+];
+
+function getStorybookNarratorLabel(value: string, polly: NarratorVoice[], cloned: NarratorVoice[]): string {
+  const [type, id] = value.split(':');
+  if (type === 'polly') return polly.find(v => v.id === id)?.label || id || 'Ruth';
+  if (type === 'cloned') return cloned.find(v => v.id === id)?.label || 'My Voice';
+  return 'Ruth';
+}
+
 export default function AlbumPage() {
   const router = useRouter();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+  const currentUser = useCurrentUser();
   const { openModal: openCreateAlbum } = useCreateAlbum();
   const [allAlbums, setAllAlbums] = useState<Album[]>([]);
   const [loading, setLoading] = useState(true);
@@ -103,6 +135,18 @@ export default function AlbumPage() {
   const [featuredAlbum, setFeaturedAlbum] = useState<Album | null>(null);
   const [viewModeState, setViewModeState] = useState<ViewMode>('cinema');
   
+  // Storybook narrator: persisted to localStorage so storybook page uses it
+  const [storybookNarratorVoice, setStorybookNarratorVoiceState] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'polly:Ruth';
+    return localStorage.getItem(STORAGE_KEY_STORYBOOK_NARRATOR) || 'polly:Ruth';
+  });
+  const setStorybookNarratorVoice = useCallback((value: string) => {
+    setStorybookNarratorVoiceState(value);
+    if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY_STORYBOOK_NARRATOR, value);
+  }, []);
+  const [storybookClonedVoices, setStorybookClonedVoices] = useState<NarratorVoice[]>([]);
+  const [showNarratorDropdown, setShowNarratorDropdown] = useState(false);
+
   // Custom setter that handles featured album when switching modes
   const setViewMode = (mode: ViewMode) => {
     setViewModeState(mode);
@@ -115,7 +159,27 @@ export default function AlbumPage() {
     }
   };
   const [showModal, setShowModal] = useState(false);
+  const [scrapbookAlbum, setScrapbookAlbum] = useState<Album | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
+
+  // Load cloned voices for storybook narrator
+  useEffect(() => {
+    const userId = currentUser?.user?.id || 'default';
+    fetch(`/api/voice/clone?userId=${encodeURIComponent(userId)}`)
+      .then((res) => res.ok ? res.json() : { savedVoice: null, voices: [] })
+      .then((data) => {
+        const list: NarratorVoice[] = [];
+        if (data.savedVoice) {
+          list.push({ id: data.savedVoice.id, label: data.savedVoice.name || "My Voice", type: 'cloned' });
+        }
+        (data.voices || []).forEach((v: { id: string; name?: string }) => {
+          if (list.some((x) => x.id === v.id)) return;
+          list.push({ id: v.id, label: v.name || v.id, type: 'cloned' });
+        });
+        setStorybookClonedVoices(list);
+      })
+      .catch(() => {});
+  }, [currentUser?.user?.id]);
   
   // Video player state
   const [isPlayingVideo, setIsPlayingVideo] = useState(false);
@@ -701,47 +765,66 @@ export default function AlbumPage() {
                   </p>
                 )}
 
-                {/* Hero Play + View Album */}
-                <div className="flex items-center gap-4" style={{ textShadow: 'none' }}>
-                  <Link
-                    href={`/album/${featuredAlbum.id}/storybook?mode=watch`}
-                    className="flex items-center gap-3 px-8 py-4 rounded-2xl text-white transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-cyan-500/20"
-                    style={{ background: 'linear-gradient(135deg, #06b6d4, #0d9488)' }}
-                  >
-                    <PlayIcon />
-                    <span className="text-lg font-semibold tracking-wide">Play Living Storybook</span>
-                  </Link>
-
-                  <Link
-                    href={`/album/${featuredAlbum.id}`}
-                    className="text-white/60 hover:text-white text-sm font-medium transition-colors"
-                  >
-                    View Album
-                  </Link>
-
-                  <Link
-                    href={`/album/${featuredAlbum.id}/editor`}
-                    className="flex items-center gap-1.5 text-white/60 hover:text-white text-sm font-medium transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.764m3.42 3.42a6.776 6.776 0 00-3.42-3.42" /></svg>
-                    Editor
-                  </Link>
-
-                  {/* Contributors — small avatars */}
-                  {featuredAlbum.members && featuredAlbum.members.length > 0 && (
-                    <div className="flex -space-x-2 ml-2">
-                      {featuredAlbum.members.slice(0, 4).map((m) => (
-                        <div 
-                          key={m.id} 
-                          className="w-9 h-9 rounded-full border-2 border-white/30 flex items-center justify-center text-white text-xs font-semibold shadow-md"
-                          style={{ backgroundColor: m.avatar_color }} 
-                          title={m.name}
-                        >
-                          {m.name[0]}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                {/* Experience buttons */}
+                <div className="flex flex-col gap-3" style={{ textShadow: 'none' }}>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <Link
+                      href={`/album/${featuredAlbum.id}/storybook?mode=watch`}
+                      className="flex items-center gap-3 px-7 py-3.5 rounded-2xl text-white transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-cyan-500/20"
+                      style={{ background: 'linear-gradient(135deg, #06b6d4, #0d9488)' }}
+                    >
+                      <PlayIcon />
+                      <span className="text-base font-semibold tracking-wide">Play Living Storybook</span>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => setScrapbookAlbum(featuredAlbum)}
+                      className="flex items-center gap-2 px-5 py-3.5 rounded-2xl text-amber-200 border border-amber-400/40 backdrop-blur-md shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]"
+                      style={{ background: 'rgba(180, 120, 30, 0.35)' }}
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" /></svg>
+                      <span className="text-sm font-semibold">Scrapbook</span>
+                    </button>
+                    <Link
+                      href={`/album/${featuredAlbum.id}/storybook?mode=read`}
+                      className="flex items-center gap-2 px-5 py-3.5 rounded-2xl text-white border border-white/30 backdrop-blur-md shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]"
+                      style={{ background: 'rgba(255, 255, 255, 0.15)' }}
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+                      <span className="text-sm font-semibold">Read</span>
+                    </Link>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/album/${featuredAlbum.id}`}
+                      className="px-3 py-1.5 rounded-lg text-white/70 hover:text-white text-sm font-medium transition-colors backdrop-blur-sm"
+                      style={{ background: 'rgba(0,0,0,0.3)' }}
+                    >
+                      View Album
+                    </Link>
+                    <Link
+                      href={`/album/${featuredAlbum.id}/editor`}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white/70 hover:text-white text-sm font-medium transition-colors backdrop-blur-sm"
+                      style={{ background: 'rgba(0,0,0,0.3)' }}
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.764m3.42 3.42a6.776 6.776 0 00-3.42-3.42" /></svg>
+                      Editor
+                    </Link>
+                    {featuredAlbum.members && featuredAlbum.members.length > 0 && (
+                      <div className="flex -space-x-2 ml-2">
+                        {featuredAlbum.members.slice(0, 4).map((m) => (
+                          <div 
+                            key={m.id} 
+                            className="w-8 h-8 rounded-full border-2 border-white/30 flex items-center justify-center text-white text-xs font-semibold shadow-md"
+                            style={{ backgroundColor: m.avatar_color }} 
+                            title={m.name}
+                          >
+                            {m.name[0]}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </>
@@ -1117,16 +1200,50 @@ export default function AlbumPage() {
                             <span className="flex items-center gap-1"><PhotoIcon /> {album.photoCount}</span>
                             <span className="flex items-center gap-1"><MicIcon /> {album.storiesRecorded} stories</span>
                           </div>
-                          {album.hasRecap && (
-                            <Link 
-                              href={`/album/${album.id}/storybook?mode=watch`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-1 mt-3 px-3 py-1.5 rounded-full bg-cyan-500/20 text-cyan-400 text-xs border border-cyan-500/30 hover:bg-cyan-500/30 transition-colors"
+                          <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+                            {album.hasRecap && (
+                              <Link 
+                                href={`/album/${album.id}/storybook?mode=watch`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-cyan-500/20 text-cyan-400 text-xs border border-cyan-500/30 hover:bg-cyan-500/30 transition-colors"
+                              >
+                                <PlayIcon />
+                                Storybook
+                              </Link>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setScrapbookAlbum(album); }}
+                              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs border transition-colors ${isDark ? 'bg-amber-500/10 text-amber-400/70 border-amber-500/20 hover:bg-amber-500/20 hover:text-amber-400' : 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100'}`}
                             >
-                              <PlayIcon />
-                              Play Storybook
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" /></svg>
+                              Scrapbook
+                            </button>
+                            <Link
+                              href={`/album/${album.id}/storybook?mode=read`}
+                              onClick={(e) => e.stopPropagation()}
+                              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs border transition-colors ${isDark ? 'bg-white/5 text-white/50 border-white/10 hover:bg-white/10 hover:text-white/70' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200 hover:text-gray-700'}`}
+                            >
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+                              Read
                             </Link>
-                          )}
+                            <span className={`text-xs ${isDark ? 'text-white/10' : 'text-gray-300'}`}>·</span>
+                            <Link
+                              href={`/album/${album.id}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className={`inline-flex items-center px-2 py-1.5 rounded-full text-xs transition-colors ${isDark ? 'text-white/30 hover:text-white/60' : 'text-gray-400 hover:text-gray-600'}`}
+                            >
+                              Album
+                            </Link>
+                            <Link
+                              href={`/album/${album.id}/editor`}
+                              onClick={(e) => e.stopPropagation()}
+                              className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-full text-xs transition-colors ${isDark ? 'text-white/30 hover:text-white/60' : 'text-gray-400 hover:text-gray-600'}`}
+                            >
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.764m3.42 3.42a6.776 6.776 0 00-3.42-3.42" /></svg>
+                              Editor
+                            </Link>
+                          </div>
                         </div>
                       </button>
                     </div>
@@ -1148,9 +1265,65 @@ export default function AlbumPage() {
   return (
     <div className="min-h-screen relative overflow-x-hidden theme-page" style={{ background: isDark ? '#0d0b09' : 'var(--bg-primary)' }}>
       {/* ================================================================== */}
-      {/* VIEW MODE TOGGLE - Enhanced */}
+      {/* TOP BAR: Storybook narrator + View mode toggle */}
       {/* ================================================================== */}
-      <div className="fixed top-4 right-4 z-40">
+      <div className="fixed top-4 left-4 right-4 flex items-center justify-end gap-3 z-40">
+        {/* Storybook narrator — always visible so users can switch before playing */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowNarratorDropdown((v) => !v)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-full text-sm font-medium backdrop-blur-md shadow-lg ${
+              isDark ? 'bg-black/60 border border-white/10 text-white hover:bg-white/10' : 'bg-white/80 border border-gray-200 text-gray-700 hover:bg-gray-100'
+            }`}
+            title="Who narrates the Living Storybook"
+          >
+            <span className="opacity-70">Storybook voice:</span>
+            <span className="font-semibold">{getStorybookNarratorLabel(storybookNarratorVoice, POLLY_NARRATOR_VOICES, storybookClonedVoices)}</span>
+            <svg className="w-4 h-4 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+          </button>
+          {showNarratorDropdown && (
+            <>
+              <div className="fixed inset-0 z-[100]" onClick={() => setShowNarratorDropdown(false)} aria-hidden="true" />
+              <div
+                className="absolute right-0 top-full mt-1.5 z-[101] rounded-xl border shadow-xl overflow-hidden min-w-[200px] max-h-[min(280px,50vh)] overflow-y-auto"
+                style={{
+                  ...(isDark ? { background: 'rgba(0,0,0,0.9)', borderColor: 'rgba(255,255,255,0.15)' } : { background: 'white', borderColor: 'rgba(0,0,0,0.1)' }),
+                }}
+              >
+                {storybookClonedVoices.length > 0 && (
+                  <>
+                    {storybookClonedVoices.map((v) => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => { setStorybookNarratorVoice(`cloned:${v.id}`); setShowNarratorDropdown(false); }}
+                        className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${isDark ? 'text-white hover:bg-white/10' : 'text-gray-800 hover:bg-gray-100'}`}
+                      >
+                        <span className="w-6 h-6 rounded-full bg-amber-500/30 flex items-center justify-center text-xs">🎙</span>
+                        {v.label}
+                        {storybookNarratorVoice === `cloned:${v.id}` && <span className="ml-auto text-cyan-500">✓</span>}
+                      </button>
+                    ))}
+                    <div className={`h-px ${isDark ? 'bg-white/15' : 'bg-gray-200'} my-1`} />
+                  </>
+                )}
+                {POLLY_NARRATOR_VOICES.map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => { setStorybookNarratorVoice(`polly:${v.id}`); setShowNarratorDropdown(false); }}
+                    className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${isDark ? 'text-white hover:bg-white/10' : 'text-gray-800 hover:bg-gray-100'}`}
+                  >
+                    <span className="w-6 h-6 rounded-full bg-cyan-500/30 flex items-center justify-center text-xs font-medium">{v.id[0]}</span>
+                    {v.label}
+                    {storybookNarratorVoice === `polly:${v.id}` && <span className="ml-auto text-cyan-500">✓</span>}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         <div className={`flex items-center gap-1 p-1.5 rounded-full backdrop-blur-md shadow-xl ${
           isDark ? 'bg-black/60 border border-white/10' : 'bg-white/80 border border-gray-200 shadow-lg'
         }`}>
@@ -1187,6 +1360,17 @@ export default function AlbumPage() {
           allAlbums={allAlbums}
           onClose={() => { setShowModal(false); setSelectedAlbum(null); }}
           onAlbumClick={(a) => { setSelectedAlbum(a); }}
+        />
+      )}
+
+      {/* Scrapbook Modal — opens in place, no navigation */}
+      {scrapbookAlbum && (
+        <ScrapbookModal
+          isOpen={true}
+          onClose={() => setScrapbookAlbum(null)}
+          eventId={scrapbookAlbum.id}
+          eventTitle={scrapbookAlbum.title}
+          eventDate={scrapbookAlbum.date}
         />
       )}
       

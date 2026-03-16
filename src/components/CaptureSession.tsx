@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { NovaLiveClient, getAuthToken } from '@/lib/nova-live';
+import { NovaLiveClient, getAuthToken, deepAnalyzePhoto } from '@/lib/nova-live';
 import { useCamera } from '@/hooks/use-camera';
 import { usePhotoScanner } from '@/hooks/use-photo-scanner';
 import { ScanOverlay, PhotoGallery, ControlsBar, AuroraWave } from '@/components/capture';
@@ -120,6 +120,9 @@ export default function CaptureSession({
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMicActive, setIsMicActive] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
+  const [isAnalyzingForDiscussion, setIsAnalyzingForDiscussion] = useState(false);
+  const [discussingPhotoId, setDiscussingPhotoId] = useState<string | null>(null);
   const [userAudioLevel, setUserAudioLevel] = useState(0);
   
   // Extraction UI state
@@ -166,9 +169,12 @@ export default function CaptureSession({
   const currentPhotoIdRef = useRef<string | null>(null);
   const storyPhotoFrameRef = useRef<string | null>(null);
   const storyPhotoIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const greetingCompleteRef = useRef(false); // Track if EVA has finished her greeting
+  const greetingCompleteRef = useRef(false);
+  const hasGreetedRef = useRef(false);
   const onGreetingCompleteRef = useRef(onGreetingComplete);
   onGreetingCompleteRef.current = onGreetingComplete;
+  const handleDiscussPhotoRef = useRef<(photoId: string) => void>(() => {});
+  const connectRef = useRef<(photoDescription?: string) => Promise<void>>(async () => {});
   
   messagesRef.current = messages;
   capturedPhotosRef.current = capturedPhotos;
@@ -305,8 +311,10 @@ export default function CaptureSession({
     setCurrentPhotoId(latestPhoto.id);
     setShowGallery(true);
     
-    // No automatic AI trigger - let user talk naturally while scanning in background
-    // The AI sees the live video stream, not the captured/cropped photo
+    // Auto-trigger deep discussion for the scanned photo
+    if (liveClientRef.current?.connected) {
+      setTimeout(() => handleDiscussPhotoRef.current(latestPhoto.id), 100);
+    }
   }, [scannedPhotos, currentPhotoId, messages.length, generateRecapForPhoto]);
 
   // Fetch event data
@@ -333,6 +341,16 @@ export default function CaptureSession({
   }, [eventId]);
 
   const event = eventData ?? { id: eventId, title: `Event ${eventId}`, date_start: null, location: null };
+
+  // Pre-warm the analyze-photo endpoint to avoid cold-start delay when camera starts
+  useEffect(() => {
+    const tiny = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAFBABAAAAAAAAAAAAAAAAAAAACf/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AKpgA//Z';
+    fetch('/api/analyze-photo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: tiny, prompt: 'warmup' }),
+    }).catch(() => {});
+  }, []);
 
   // Auto-scroll messages
   useEffect(() => {
@@ -400,21 +418,88 @@ export default function CaptureSession({
     await capturePhoto('Manual capture');
   }, [capturePhoto]);
 
-  // Upload photos from device (file picker)
+  // Discuss a specific photo — deep-analyzes it, then RECONNECTS to Nova Sonic
+  // with the analysis baked into the system instruction (same approach as story
+  // mode's "Record" button, which works perfectly).
+  const handleDiscussPhoto = useCallback(async (photoId: string, imageData?: string) => {
+    const photo = capturedPhotosRef.current.find(p => p.id === photoId);
+    const photoImage = imageData || photo?.imageData;
+    if (!photoImage) return;
+
+    // Save recap for previous photo if we were discussing one
+    if (discussingPhotoId && discussingPhotoId !== photoId) {
+      generateRecapForPhoto(discussingPhotoId);
+    }
+
+    setDiscussingPhotoId(photoId);
+    setIsAnalyzingForDiscussion(true);
+    setCurrentPhotoId(photoId);
+
+    // Add a divider in chat
+    setMessages(prev => [...prev, {
+      id: `divider-discuss-${photoId}`,
+      role: 'system' as const,
+      content: 'Discussing this photo...',
+      timestamp: Date.now(),
+      isPhotoDivider: true,
+      photoId,
+    }]);
+
+    try {
+      // Step 1: Deep-analyze the actual high-res photo (same as story mode)
+      const analysis = await deepAnalyzePhoto(photoImage);
+      console.log('[handleDiscussPhoto] Analysis:', analysis.substring(0, 150));
+
+      if (!analysis) {
+        showToast('Could not analyze photo');
+        setIsAnalyzingForDiscussion(false);
+        return;
+      }
+
+      // Step 2: Disconnect existing Nova Sonic session
+      if (liveClientRef.current) {
+        liveClientRef.current.disconnect();
+        liveClientRef.current = null;
+      }
+      setIsConnected(false);
+      setIsMicActive(false);
+
+      // Step 3: Reconnect with the photo analysis baked into the system instruction
+      // This is identical to how story mode works — EVA knows the photo from her first word.
+      await connectRef.current(analysis);
+
+      setCapturedPhotos(prev => prev.map(p =>
+        p.id === photoId ? { ...p, hasConversation: true } : p
+      ));
+    } catch (err) {
+      console.error('[handleDiscussPhoto] Failed:', err);
+      showToast('Failed to analyze photo');
+    } finally {
+      setIsAnalyzingForDiscussion(false);
+    }
+  }, [discussingPhotoId, generateRecapForPhoto, showToast]);
+  handleDiscussPhotoRef.current = handleDiscussPhoto;
+
+  // Stop discussing current photo (return to scanning)
+  const handleStopDiscussing = useCallback(() => {
+    if (discussingPhotoId) {
+      generateRecapForPhoto(discussingPhotoId);
+    }
+    setDiscussingPhotoId(null);
+    if (liveClientRef.current) {
+      liveClientRef.current.discussingPhoto = false;
+    }
+  }, [discussingPhotoId, generateRecapForPhoto]);
+
+  // Upload photos from device (file picker) — adds to gallery and auto-starts discussion
   const handleUploadPhotos = useCallback((files: FileList) => {
     Array.from(files).forEach((file) => {
       const reader = new FileReader();
       reader.onloadend = async () => {
         const rawData = reader.result as string;
         if (!rawData) return;
-        // Resize to avoid API body-size limits
         const imageData = await resizeImage(rawData);
         const photoId = `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        
-        // Generate recap for previous photo before adding new one
-        if (currentPhotoIdRef.current && messagesRef.current.length > 0) {
-          generateRecapForPhoto(currentPhotoIdRef.current);
-        }
 
         const newPhoto: CapturedPhoto = {
           id: photoId,
@@ -427,24 +512,21 @@ export default function CaptureSession({
         setCurrentPhotoId(photoId);
         setShowGallery(true);
 
-        // Send to Live API so EVA can see and talk about it
+        // Auto-trigger deep discussion so EVA actually analyzes the photo
         if (liveClientRef.current?.connected) {
-          liveClientRef.current.sendTextWithImage(
-            'The user just uploaded this photo. Look at it and comment on what you see — ask them about the memory.',
-            imageData
-          );
+          setTimeout(() => handleDiscussPhoto(photoId), 100);
         }
       };
       reader.readAsDataURL(file);
     });
-  }, [generateRecapForPhoto]);
+  }, [handleDiscussPhoto]);
 
   // Toggle sample photo picker
   const handleUseSamples = useCallback(() => {
     setShowSamplePicker(prev => !prev);
   }, []);
 
-  // Select a single sample photo
+  // Select a single sample photo — adds to gallery and auto-starts discussion
   const handleSelectSample = useCallback(async (src: string) => {
     setShowSamplePicker(false);
     try {
@@ -454,14 +536,8 @@ export default function CaptureSession({
       reader.onloadend = async () => {
         const rawData = reader.result as string;
         if (!rawData) return;
-        // Resize to avoid API body-size limits
         const imageData = await resizeImage(rawData);
         const photoId = `sample-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-        // Generate recap for previous photo before adding new one
-        if (currentPhotoIdRef.current && messagesRef.current.length > 0) {
-          generateRecapForPhoto(currentPhotoIdRef.current);
-        }
 
         const newPhoto: CapturedPhoto = {
           id: photoId,
@@ -473,21 +549,18 @@ export default function CaptureSession({
         setCapturedPhotos(prev => [...prev, newPhoto]);
         setCurrentPhotoId(photoId);
         setShowGallery(true);
-
-        // Send to Live API so EVA can see the photo
-        if (liveClientRef.current?.connected) {
-          liveClientRef.current.sendTextWithImage(
-            'The user loaded a sample family photo. Look at it and comment on what you see — ask them about the memory.',
-            imageData
-          );
-        }
         showToast('Photo added!');
+
+        // Auto-trigger deep discussion so EVA actually analyzes the photo
+        if (liveClientRef.current?.connected) {
+          setTimeout(() => handleDiscussPhoto(photoId), 100);
+        }
       };
       reader.readAsDataURL(blob);
     } catch {
       showToast('Failed to load sample photo');
     }
-  }, [generateRecapForPhoto, showToast]);
+  }, [showToast, handleDiscussPhoto]);
 
   // Remove photo
   const removePhoto = useCallback(async (photoId: string, reason: 'delete' | 'retake') => {
@@ -534,7 +607,7 @@ export default function CaptureSession({
             ? { ...p, imageData: result.imageDataUrl, extractionMethod: 'nano-banana', isExtracting: false } 
             : p
         ));
-        showToast(`🍌 Photo enhanced! (${result.model})`);
+        showToast(`🍌 Photo enhanced with Nano Banana! (${result.model})`);
       } else {
         setCapturedPhotos(prev => prev.map(p => 
           p.id === photoId ? { ...p, isExtracting: false } : p
@@ -555,7 +628,7 @@ export default function CaptureSession({
     title?: string;
     date?: string;
     location?: string;
-  }) => {
+  }, photoDescription?: string) => {
     let instruction = `You are EVA, a warm and caring AI companion helping preserve precious family memories. Your name means "life" — you help bring memories to life.
 
 PRONUNCIATION: When you say your name out loud, pronounce it "Eva" (EE-vuh), like the name Eve. Never spell it out letter by letter.
@@ -571,23 +644,28 @@ CRITICAL BEHAVIORS:
 2. Ask about emotions and significance — "What made that moment special?"
 3. Ask about context — Who else was there? What happened before/after?
 4. Keep responses BRIEF (2-3 sentences max) but always end with a question
-5. If user doesn't remember, ask "Who might remember this moment?"
+5. If user doesn't remember, ask "Who might remember this moment?"`;
 
-When you see a photo, acknowledge it and ask about specific details you observe.
+    if (photoDescription) {
+      instruction += `
 
-CRITICAL - HONESTY ABOUT VISION:
+PHOTO YOU ARE LOOKING AT:
+You are currently looking at a photo. Here is exactly what you can see:
+${photoDescription}
+
+You KNOW these details because you can see the photo. When the user asks "what do you see?" or "can you see it?", describe specific details from above confidently — you ARE looking at this photo. Reference specific people, clothing, expressions, and setting details. Do not be vague. Do not say "I think I see something special" — instead say what you actually see: the people, what they're wearing, their expressions, and the setting.`;
+    } else {
+      instruction += `
+
+VISION:
 - You only see what the user sends: images or video frames from their camera.
-- If you have NOT received any image or video, you CANNOT see anything. Never pretend or make up what you see.
-- If asked "can you see" or "what do you see" and you have no visual input, say honestly: "I can't see anything right now — please turn on your camera and show me your photos so I can help you capture those memories!"
-- Never describe, invent, or hallucinate people, objects, or scenes you have not actually received as image/video input.
-
-BLURRY OR UNCLEAR IMAGES:
-- If an image is blurry, dark, out of focus, or you genuinely cannot make out details, say so honestly: "This image is a bit unclear - I can see [what you CAN see] but I'm having trouble making out the details. Could you try capturing it again, or describe what's in the photo?"
-- NEVER make up or guess details you cannot actually see. If you're uncertain, ask the user to clarify.
-- It's okay to say "I think I see..." or "It looks like it might be..." when genuinely uncertain, but don't state things as fact if you're not sure.`;
+- If you have NOT received any image or video, you CANNOT see anything.
+- If asked "can you see" and you have no visual input, say: "I can't see anything right now — please show me a photo!"
+- Never describe, invent, or hallucinate scenes you have not actually seen.`;
+    }
 
     if (albumContext) {
-      instruction += `\n\nCONTEXT:\n`;
+      instruction += `\n\nALBUM CONTEXT:\n`;
       if (albumContext.title) instruction += `- Album: ${albumContext.title}\n`;
       if (albumContext.date) instruction += `- Date: ${albumContext.date}\n`;
       if (albumContext.location) instruction += `- Location: ${albumContext.location}\n`;
@@ -596,13 +674,37 @@ BLURRY OR UNCLEAR IMAGES:
     return instruction;
   }, []);
 
-  // Connect to Nova Sonic
-  const connect = useCallback(async () => {
-    if (isConnecting || isConnected) return;
+  // Connect to Nova Sonic (optionally with pre-analyzed photo description)
+  const connect = useCallback(async (photoDescription?: string) => {
+    // Skip if already connecting. For isConnected, check the actual client ref
+    // (React state may be stale when called right after disconnect).
+    if (isConnecting) return;
+    if (!photoDescription && liveClientRef.current?.connected) return;
     
     setIsConnecting(true);
     
     try {
+      // If story mode, pre-analyze the photo BEFORE connecting
+      let preAnalysis = photoDescription || '';
+      if (mode === 'story' && storyPhotoUrl && !preAnalysis) {
+        setIsAnalyzingForDiscussion(true);
+        try {
+          const imgRes = await fetch(storyPhotoUrl);
+          const blob = await imgRes.blob();
+          const base64 = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+          });
+          preAnalysis = await deepAnalyzePhoto(base64);
+          console.log('[connect] Pre-analysis complete:', preAnalysis.substring(0, 150));
+        } catch (err) {
+          console.error('[connect] Pre-analysis failed:', err);
+        } finally {
+          setIsAnalyzingForDiscussion(false);
+        }
+      }
+
       const auth = await getAuthToken();
       const apiKey = auth.apiKey || auth.token;
       
@@ -616,11 +718,11 @@ BLURRY OR UNCLEAR IMAGES:
       
       const client = new NovaLiveClient(apiKey, {
         responseModalities: ['AUDIO'],
-        systemInstruction: buildSystemInstruction(albumContext),
+        systemInstruction: buildSystemInstruction(albumContext, preAnalysis || undefined),
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: {
-              voiceName: 'Kore', // Female voice (EVA / Eve)
+              voiceName: 'Kore',
             },
           },
         },
@@ -629,10 +731,18 @@ BLURRY OR UNCLEAR IMAGES:
           setIsConnected(true);
           setIsConnecting(false);
           
-          // Handle story mode vs capture mode
-          if (mode === 'story' && storyPhotoUrl) {
-            // Story mode: send the photo to EVA and ask about it
-            // Also set up interval to keep sending the photo so EVA maintains context
+          if (preAnalysis && hasGreetedRef.current) {
+            // Switching to a new photo mid-session — skip re-introduction.
+            client.discussingPhoto = true;
+            client.sendText("The user is now showing you a NEW photo. Do NOT re-introduce yourself or say hello again. Just describe 2-3 specific things you notice in this new photo (people, setting, mood) and ask what makes this moment special. Be warm and specific.");
+          } else if (preAnalysis) {
+            // First photo with pre-analysis — greet + describe.
+            client.discussingPhoto = true;
+            hasGreetedRef.current = true;
+            client.sendText("Greet the user as Eva (EE-vuh). You can see their photo — describe 2-3 specific things you notice (people, setting, mood) and ask what makes this moment special. Be warm and specific.");
+          } else if (mode === 'story' && storyPhotoUrl) {
+            // Story mode fallback: pre-analysis failed
+            hasGreetedRef.current = true;
             fetch(storyPhotoUrl)
               .then(res => res.blob())
               .then(blob => {
@@ -640,30 +750,19 @@ BLURRY OR UNCLEAR IMAGES:
                 reader.onloadend = () => {
                   const base64Data = reader.result as string;
                   if (base64Data && client.connected) {
-                    // Store the frame for periodic sending
-                    storyPhotoFrameRef.current = base64Data;
-                    
-                    // Send initial frame
-                    client.sendVideoFrame(base64Data);
-                    client.sendText("The user wants to tell the story of this photo. Greet them warmly as Eva (pronounced EE-vuh, like Eve). Say you can see their photo and ask what makes this moment special to them.");
-                    
-                    // Set up interval to keep sending the photo (every 1 second, like camera does)
-                    if (storyPhotoIntervalRef.current) {
-                      clearInterval(storyPhotoIntervalRef.current);
-                    }
-                    storyPhotoIntervalRef.current = setInterval(() => {
-                      if (storyPhotoFrameRef.current && liveClientRef.current?.connected) {
-                        liveClientRef.current.sendVideoFrame(storyPhotoFrameRef.current);
-                      }
-                    }, 1000);
+                    client.sendTextWithImage(
+                      'The user is showing you a photo. Describe 2-3 specific details you notice and ask what makes this moment special.',
+                      base64Data
+                    );
                   }
                 };
                 reader.readAsDataURL(blob);
               })
               .catch(err => console.error('Failed to send photo:', err));
           } else {
-            // Capture mode: generic greeting
-            client.sendText("The user has just connected. Greet them warmly. Say your name as Eva (pronounced EE-vuh, like Eve). Say you're ready to help capture their memories and tell them to turn on the camera and show you their photos.");
+            // Capture mode: first connect, no photo yet
+            hasGreetedRef.current = true;
+            client.sendText("The user has just connected. Greet them warmly. Say your name as Eva (pronounced EE-vuh, like Eve). Say you're here to help capture their family memories. Tell them to scan or import their photos, then tap on any photo to discuss it with you.");
           }
         },
         onDisconnect: () => {
@@ -672,11 +771,21 @@ BLURRY OR UNCLEAR IMAGES:
         },
         onMessage: (message) => {
           // Hide the internal triggers we use to get EVA to speak first
-          const evaGreetingTrigger = "The user has just connected. Greet them warmly";
-          const storyTrigger = "The user wants to tell the story";
+          const internalTriggers = [
+            "The user has just connected",
+            "The user wants to tell the story",
+            "Greet the user as Eva",
+            "The user is showing you a photo",
+            "The user is now showing you a NEW photo",
+            "The user added a photo",
+            "Briefly acknowledge it and ask them",
+            "The user wants to discuss this photo",
+            "The user just uploaded this photo",
+            "Describe 2-3 specific",
+            "Do NOT re-introduce yourself",
+          ];
           if (message.type === 'user' && message.content && 
-              !message.content.includes(evaGreetingTrigger) && 
-              !message.content.includes(storyTrigger)) {
+              !internalTriggers.some(t => message.content.includes(t))) {
             setMessages(prev => [...prev, {
               id: `msg-${Date.now()}-user`,
               role: 'user',
@@ -712,6 +821,7 @@ BLURRY OR UNCLEAR IMAGES:
           setIsConnecting(false);
         },
         onInterrupted: () => setIsAISpeaking(false),
+        onProcessingPhoto: (processing) => setIsProcessingPhoto(processing),
       });
       
       liveClientRef.current = client;
@@ -721,7 +831,8 @@ BLURRY OR UNCLEAR IMAGES:
       console.error('Failed to connect:', error);
       setIsConnecting(false);
     }
-  }, [isConnecting, isConnected, event, buildSystemInstruction]);
+  }, [isConnecting, event, buildSystemInstruction]);
+  connectRef.current = connect;
 
   // Disconnect
   const disconnect = useCallback(async () => {
@@ -787,15 +898,21 @@ BLURRY OR UNCLEAR IMAGES:
       }
       
       // Capture mode: upload photos and save stories
-      // Generate recap for the current photo before finishing
+      // Generate recap for the currently discussed photo before finishing
       const recaps: Map<string, string> = new Map();
-      if (currentPhotoId && messages.length > 0) {
-        const recap = await generateRecapForPhoto(currentPhotoId);
-        if (recap) recaps.set(currentPhotoId, recap);
+      const photoToRecap = discussingPhotoId || currentPhotoId;
+      if (photoToRecap && messages.length > 0) {
+        const recap = await generateRecapForPhoto(photoToRecap);
+        if (recap) recaps.set(photoToRecap, recap);
         setCapturedPhotos(prev => prev.map(p => 
-          p.id === currentPhotoId ? { ...p, hasConversation: true } : p
+          p.id === photoToRecap ? { ...p, hasConversation: true } : p
         ));
       }
+      // Stop discussing mode
+      if (liveClientRef.current) {
+        liveClientRef.current.discussingPhoto = false;
+      }
+      setDiscussingPhotoId(null);
       
       // Get latest photos with stories from state
       const latestPhotos = capturedPhotosRef.current;
@@ -822,7 +939,7 @@ BLURRY OR UNCLEAR IMAGES:
         if (uploaded.story) {
           try {
             await fetch(`/api/photos/${uploaded.serverId}`, {
-              method: 'PUT',
+              method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ summary: uploaded.story }),
             });
@@ -867,7 +984,7 @@ BLURRY OR UNCLEAR IMAGES:
       console.error('Error finishing session:', error);
       setIsFinishing(false);
     }
-  }, [currentPhotoId, messages, capturedPhotos, stopCamera, eventId, router, isModal, onClose, onPhotosAdded, generateRecapForPhoto, mode, storyPhotoId, onStoryGenerated]);
+  }, [currentPhotoId, discussingPhotoId, messages, capturedPhotos, stopCamera, eventId, router, isModal, onClose, onPhotosAdded, generateRecapForPhoto, mode, storyPhotoId, onStoryGenerated]);
 
   // Start/stop mic
   const startMic = useCallback(async () => {
@@ -1107,7 +1224,7 @@ BLURRY OR UNCLEAR IMAGES:
                       </p>
                       
                       <button
-                        onClick={connect}
+                        onClick={() => connect()}
                         className="px-6 py-3 rounded-full bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-500 text-white font-medium hover:opacity-90 transition-opacity"
                       >
                         Start Session
@@ -1138,9 +1255,13 @@ BLURRY OR UNCLEAR IMAGES:
                     photos={capturedPhotos}
                     currentPhotoId={currentPhotoId}
                     selectedPhotoId={selectedPhotoId}
+                    discussingPhotoId={discussingPhotoId}
+                    isAnalyzingForDiscussion={isAnalyzingForDiscussion}
                     onSelectPhoto={setSelectedPhotoId}
                     onRemovePhoto={removePhoto}
                     onEnhancePhoto={enhancePhoto}
+                    onDiscussPhoto={handleDiscussPhoto}
+                    onStopDiscussing={handleStopDiscussing}
                     getExtractionLabel={getExtractionLabel}
                   />
                 )}
@@ -1189,9 +1310,19 @@ BLURRY OR UNCLEAR IMAGES:
               </div>
             </div>
             
+            {/* Processing photo indicator */}
+            {(isProcessingPhoto || isAnalyzingForDiscussion) && (
+              <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 bg-cyan-500/10 border-b border-cyan-500/20">
+                <div className="w-4 h-4 border-2 border-cyan-400/40 border-t-cyan-400 rounded-full animate-spin" />
+                <span className="text-cyan-300 text-sm">
+                  {isAnalyzingForDiscussion ? 'EVA is studying the photo in detail...' : 'EVA is looking at the photo...'}
+                </span>
+              </div>
+            )}
+
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 custom-scrollbar">
-              {messages.length === 0 && isConnected && (
+              {messages.length === 0 && isConnected && !isProcessingPhoto && (
                 <div className="text-center py-4 text-white/40 text-sm">
                   EVA is listening...
                 </div>
@@ -1383,17 +1514,27 @@ BLURRY OR UNCLEAR IMAGES:
           photos={capturedPhotos}
           currentPhotoId={currentPhotoId}
           selectedPhotoId={selectedPhotoId}
+          discussingPhotoId={discussingPhotoId}
+          isAnalyzingForDiscussion={isAnalyzingForDiscussion}
           onSelectPhoto={setSelectedPhotoId}
           onRemovePhoto={removePhoto}
           onEnhancePhoto={enhancePhoto}
+          onDiscussPhoto={handleDiscussPhoto}
+          onStopDiscussing={handleStopDiscussing}
           getExtractionLabel={getExtractionLabel}
         />
       )}
 
       {/* Transcript overlay */}
-      {isConnected && messages.length > 0 && !isScanning && (
+      {isConnected && (messages.length > 0 || isAnalyzingForDiscussion) && !isScanning && (
         <div className="absolute top-20 left-4 right-4 md:left-8 md:right-auto md:max-w-md z-10 max-h-[40vh] overflow-y-auto scrollbar-hide">
           <div className="space-y-3">
+            {isAnalyzingForDiscussion && (
+              <div className="px-4 py-3 rounded-2xl backdrop-blur-md bg-purple-500/15 border border-purple-500/30 flex items-center gap-2.5 animate-fade-in">
+                <div className="w-4 h-4 border-2 border-purple-400/40 border-t-purple-400 rounded-full animate-spin" />
+                <span className="text-purple-200 text-sm">EVA is studying the photo in detail...</span>
+              </div>
+            )}
             {messages.slice(-3).map((msg) => (
               <div
                 key={msg.id}
@@ -1477,7 +1618,7 @@ BLURRY OR UNCLEAR IMAGES:
             </p>
             
             <button
-              onClick={connect}
+              onClick={() => connect()}
               className="px-8 py-4 rounded-full bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-500 text-white font-medium hover:opacity-90 transition-opacity"
             >
               Start Session

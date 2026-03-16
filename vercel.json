@@ -2,6 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "functions": {
+    "src/app/api/analyze-photo/route.ts": {
+      "maxDuration": 60
+    },
     "src/app/api/animate-photo/route.ts": {
       "maxDuration": 300
     },
@@ -30,6 +33,12 @@
       "maxDuration": 60
     },
     "src/app/api/nano-banana/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/generate-recap/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/photos/[id]/enhance/route.ts": {
       "maxDuration": 60
     }
   }

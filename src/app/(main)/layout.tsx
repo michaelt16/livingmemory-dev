@@ -162,7 +162,7 @@ function NavigationContent({ children }: { children: React.ReactNode }) {
 
   const comingSoonItems: NavItem[] = [
     { href: '/family', label: 'Family Tree', icon: FamilyIcon },
-    { href: '/vision', label: 'Genie', icon: VisionIcon },
+    { href: '/vision', label: '3D Worlds', icon: VisionIcon },
   ];
 
   const bottomNavItems: NavItem[] = [

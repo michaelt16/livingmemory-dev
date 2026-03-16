@@ -345,15 +345,39 @@ export async function GET(request: Request) {
       });
     });
 
-    // Stories: use author_id, show transcript excerpt
+    // Stories: use author_id, extract human-readable excerpt from transcript
     conversations?.forEach(c => {
       const photo = c.photo_id ? photoMap.get(c.photo_id) : undefined;
       const evt = photo?.event_id ? eventMap.get(photo.event_id) : undefined;
       const member = resolveMember(c.author_id);
-      // Use transcript as excerpt (truncate to ~150 chars)
-      const excerpt = c.transcript
-        ? (c.transcript.length > 150 ? c.transcript.slice(0, 150) + '...' : c.transcript)
-        : (c.duration_seconds ? `${Math.round(c.duration_seconds / 60)} min story` : 'Shared a story');
+
+      let excerpt = '';
+      if (c.transcript) {
+        try {
+          const parsed = JSON.parse(c.transcript);
+          if (Array.isArray(parsed)) {
+            const userMessages = parsed
+              .filter((m: { role: string }) => m.role === 'user')
+              .map((m: { content: string }) => m.content)
+              .filter((t: string) => t && t.trim().length > 0);
+            excerpt = userMessages.join(' ').trim();
+          }
+        } catch {
+          // Not JSON — treat as plain text
+          if (!c.transcript.startsWith('[{') && !c.transcript.startsWith('[{"')) {
+            excerpt = c.transcript;
+          }
+        }
+      }
+
+      if (!excerpt) {
+        excerpt = c.duration_seconds
+          ? `${Math.round(c.duration_seconds / 60)} min story`
+          : 'Shared a story';
+      } else if (excerpt.length > 200) {
+        excerpt = excerpt.slice(0, 200) + '...';
+      }
+
       feedItems.push({
         id: `story-${c.id}`,
         type: 'story',

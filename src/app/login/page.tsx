@@ -83,6 +83,9 @@ export default function LoginPage() {
         <p className={`text-base ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
           Who&apos;s remembering today?
         </p>
+        <p className={`mt-2 text-sm ${isDark ? 'text-white/30' : 'text-gray-400/80'}`}>
+          Pick a family member to explore the demo — albums, photos, and stories are pre-loaded.
+        </p>
       </div>
 
       {/* Profile Grid */}

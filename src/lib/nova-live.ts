@@ -52,7 +52,27 @@ export interface LiveCallbacks {
   onError?: (error: Error) => void;
   onInterrupted?: () => void;
   onTurnComplete?: () => void;
+  onProcessingPhoto?: (processing: boolean) => void;
 }
+
+/**
+ * Deep photo analysis prompt for dedicated photo conversations.
+ * Produces a rich 8-10 sentence description that gives EVA enough context
+ * to have a meaningful, detailed conversation about the photo.
+ */
+export const DEEP_PHOTO_ANALYSIS_PROMPT = `Analyze this photograph in thorough detail (8-10 sentences). Cover ALL of the following:
+
+PEOPLE: Exact number of people visible. For each person, describe their approximate age, gender, ethnicity if apparent, clothing (colors, style), facial expression, body language, and posture. Note if people are touching, embracing, or positioned in ways that suggest relationships (parent-child, couple, friends, etc).
+
+SETTING: Describe the specific location — indoors or outdoors? If indoors, what type of room (living room, restaurant, church, etc)? If outdoors, describe the landscape, weather, time of day. Note the lighting quality (natural, flash, ambient). Describe background details — wall decorations, furniture, trees, buildings, sky.
+
+OBJECTS & DETAILS: Any food, drinks, cake, gifts, decorations, balloons, flowers, signs, banners, or text visible. Any pets or animals. Any notable objects people are holding or wearing (jewelry, hats, costumes, uniforms).
+
+ERA & CONTEXT: Estimate the decade or era based on clothing styles, hair styles, photo quality, and visible technology. What type of event or occasion does this appear to be (birthday, wedding, holiday, casual gathering, formal event, vacation)?
+
+MOOD: Describe the overall emotional tone — joyful, solemn, casual, formal, chaotic, serene? What makes this moment feel significant or worth preserving?
+
+Be extremely concrete and specific. Say "a woman in her 60s with silver hair wearing a red cardigan, smiling broadly with her arm around a boy of about 8 in a striped blue t-shirt" NOT "some people together."`;
 
 export class NovaLiveClient {
   private ws: WebSocket | null = null;
@@ -74,6 +94,7 @@ export class NovaLiveClient {
   private frameDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private frameCount: number = 0;
   private hasInjectedPhotoContext: boolean = false;
+  private _discussingPhoto: boolean = false;
 
   constructor(_apiKey: string, config: LiveConfig = {}, callbacks: LiveCallbacks = {}) {
     this.config = {
@@ -163,25 +184,29 @@ export class NovaLiveClient {
           }
           break;
 
-        case 'turnComplete':
-          if (this.userResponseBuffer.trim()) {
+        case 'turnComplete': {
+          const userText = this.userResponseBuffer.trim();
+          const modelText = this.modelResponseBuffer.trim();
+          this.userResponseBuffer = '';
+          this.modelResponseBuffer = '';
+          const isInterruptedJson = (s: string) => /^\s*\{\s*["']?interrupted["']?\s*:\s*true\s*\}\s*$/i.test(s) || s.includes('"interrupted"') && s.includes('true');
+          if (userText && !isInterruptedJson(userText)) {
             this.callbacks.onMessage?.({
               type: 'user',
-              content: this.userResponseBuffer.trim(),
+              content: userText,
               timestamp: Date.now(),
             });
-            this.userResponseBuffer = '';
           }
-          if (this.modelResponseBuffer.trim()) {
+          if (modelText && !isInterruptedJson(modelText)) {
             this.callbacks.onMessage?.({
               type: 'model',
-              content: this.modelResponseBuffer.trim(),
+              content: modelText.replace(/\s*\{\s*["']?interrupted["']?\s*:\s*true\s*\}\s*/gi, '').trim(),
               timestamp: Date.now(),
             });
-            this.modelResponseBuffer = '';
           }
           this.callbacks.onTurnComplete?.();
           break;
+        }
 
         case 'error':
           this.callbacks.onError?.(new Error(message.message || 'Unknown error'));
@@ -189,6 +214,8 @@ export class NovaLiveClient {
 
         case 'interrupted':
           this.audioQueue = [];
+          this.modelResponseBuffer = '';
+          this.userResponseBuffer = '';
           this.callbacks.onInterrupted?.();
           break;
       }
@@ -238,17 +265,20 @@ export class NovaLiveClient {
   async sendTextWithImage(text: string, imageDataUrl: string): Promise<void> {
     if (!this.ws || !this.isConnected) return;
 
+    this.callbacks.onProcessingPhoto?.(true);
     try {
       const response = await fetch('/api/analyze-photo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: imageDataUrl }),
+        body: JSON.stringify({
+          imageBase64: imageDataUrl,
+          prompt: 'Describe this photo in rich detail (4-5 sentences). Include: how many people are visible, their approximate ages, clothing, expressions, and body language. Describe the setting specifically (indoors/outdoors, room type, decorations, landscape). Note any food, objects, text, or signage. Describe the mood and what activity or event seems to be happening. Be concrete — say "three women in their 60s laughing around a dinner table" not "some people at a gathering".',
+        }),
       });
       const data = await response.json();
-      const description = data.analysis
-        ? JSON.stringify(data.analysis)
-        : data.response || 'A photograph';
+      const description = data.response || (data.analysis ? JSON.stringify(data.analysis) : 'A photograph');
 
+      console.log('[sendTextWithImage] Analysis result:', description.substring(0, 200));
       this.lastAnalysisResult = description;
       this.hasInjectedPhotoContext = true;
 
@@ -257,15 +287,12 @@ export class NovaLiveClient {
         description,
         userText: text,
       }));
-    } catch {
+    } catch (err) {
+      console.error('[sendTextWithImage] Analysis failed:', err);
       this.ws.send(JSON.stringify({ type: 'text', content: text }));
+    } finally {
+      this.callbacks.onProcessingPhoto?.(false);
     }
-
-    this.callbacks.onMessage?.({
-      type: 'user',
-      content: text,
-      timestamp: Date.now(),
-    });
   }
 
   sendAudio(audioData: ArrayBuffer): void {
@@ -279,7 +306,7 @@ export class NovaLiveClient {
   /**
    * Smart vision bridge for camera frames.
    *
-   * Called every ~1s with camera/photo frames. Instead of sending every frame
+   * Called every ~1.5s with camera/photo frames. Instead of sending every frame
    * to the model (impossible with Nova Sonic), this method:
    *
    * 1. Skips most frames — only analyzes every Nth frame to avoid spam
@@ -292,6 +319,7 @@ export class NovaLiveClient {
    */
   sendVideoFrame(frameData: string): void {
     if (!this.ws || !this.isConnected) return;
+    if (this._discussingPhoto) return;
 
     this.frameCount++;
 
@@ -301,25 +329,25 @@ export class NovaLiveClient {
       return;
     }
 
-    // First frame: analyze immediately for fast initial context
-    const isFirstFrame = this.frameCount === 1;
+    // First 2 frames: analyze immediately so EVA has context fast
+    const isEarlyFrame = this.frameCount <= 2;
 
-    // After first frame: only analyze every 5th frame (every ~5 seconds)
-    if (!isFirstFrame && this.frameCount % 5 !== 0) {
+    // After early frames: analyze every 8th frame (~12 seconds) — just keep context fresh
+    if (!isEarlyFrame && this.frameCount % 8 !== 0) {
       return;
     }
 
     // Don't stack up analyses
     if (this.frameAnalysisInFlight) return;
 
-    // Debounce: wait 500ms for frames to settle (user moving camera)
+    // Debounce: minimal for early frames, longer for later
     if (this.frameDebounceTimer) {
       clearTimeout(this.frameDebounceTimer);
     }
 
     this.frameDebounceTimer = setTimeout(() => {
       this.analyzeFrameInBackground(frameData, frameSignature);
-    }, isFirstFrame ? 100 : 500);
+    }, isEarlyFrame ? 50 : 400);
   }
 
   private async analyzeFrameInBackground(
@@ -328,9 +356,10 @@ export class NovaLiveClient {
   ): Promise<void> {
     if (this.frameAnalysisInFlight) return;
     this.frameAnalysisInFlight = true;
+    this.callbacks.onProcessingPhoto?.(true);
 
     try {
-      const quickPrompt = 'Briefly describe this image in 2-3 sentences. Focus on: who is visible, what they are doing, the setting, and any notable objects or text. Be specific about people (age, clothing, expression) and setting details.';
+      const quickPrompt = 'Describe this image in 3-4 vivid sentences as if telling a friend what you see. Include: exact number of people visible, approximate ages, what they are wearing, their expressions and body language, the specific setting (indoors/outdoors, room type, landscape), any food/decorations/objects visible, and the overall mood. If there is text or signage, read it. Be concrete and specific — avoid vague terms like "some people" or "a gathering".';
 
       const response = await fetch('/api/analyze-photo', {
         method: 'POST',
@@ -370,6 +399,7 @@ export class NovaLiveClient {
       console.error('[Vision Bridge] Frame analysis failed:', error);
     } finally {
       this.frameAnalysisInFlight = false;
+      this.callbacks.onProcessingPhoto?.(false);
     }
   }
 
@@ -476,10 +506,43 @@ export class NovaLiveClient {
     this.lastAnalysisResult = '';
     this.hasInjectedPhotoContext = false;
     this.frameCount = 0;
+    this._discussingPhoto = false;
   }
 
   get connected(): boolean {
     return this.isConnected;
+  }
+
+  set discussingPhoto(val: boolean) {
+    this._discussingPhoto = val;
+  }
+
+  get discussingPhoto(): boolean {
+    return this._discussingPhoto;
+  }
+}
+
+/**
+ * Run a deep analysis of a photo BEFORE connecting to Nova Sonic.
+ * Returns a rich 8-10 sentence description suitable for embedding in
+ * the system instruction so EVA "knows" the photo from her first word.
+ */
+export async function deepAnalyzePhoto(imageDataUrl: string): Promise<string> {
+  try {
+    const response = await fetch('/api/analyze-photo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        imageBase64: imageDataUrl,
+        prompt: DEEP_PHOTO_ANALYSIS_PROMPT,
+      }),
+    });
+    if (!response.ok) throw new Error(`Analysis failed: ${response.status}`);
+    const data = await response.json();
+    return data.response || (data.analysis ? JSON.stringify(data.analysis) : '');
+  } catch (err) {
+    console.error('[deepAnalyzePhoto] Failed:', err);
+    return '';
   }
 }
 

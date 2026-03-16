@@ -88,7 +88,7 @@ export default function VisionPage() {
         </div>
       </div>
 
-      {/* Google Genie Section */}
+      {/* 3D World Generation Section */}
       <div className="relative py-20 overflow-hidden">
         <div 
           className="absolute inset-0"
@@ -99,22 +99,22 @@ export default function VisionPage() {
           <div className="flex items-center gap-3 mb-4">
             <div 
               className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ background: 'linear-gradient(135deg, #4285f4, #ea4335, #fbbc05, #34a853)' }}
+              style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa, #c4b5fd)' }}
             >
               <span className="text-white text-lg">✦</span>
             </div>
-            <span className={`text-sm uppercase tracking-wider ${isDark ? 'text-white/50' : 'text-gray-500'}`}>Powered by</span>
+            <span className={`text-sm uppercase tracking-wider ${isDark ? 'text-white/50' : 'text-gray-500'}`}>3D Generation</span>
           </div>
           
           <h2 
             className={`text-3xl md:text-4xl font-light mb-4 ${isDark ? 'text-white' : 'text-gray-800'}`}
             style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
           >
-            Google Genie Integration
+            3D World Generation
           </h2>
           
           <p className={`text-lg max-w-2xl mb-12 leading-relaxed ${isDark ? 'text-white/60' : 'text-gray-600'}`}>
-            Google Genie transforms single images into explorable, interactive 3D worlds. 
+            Transform single images into explorable, interactive 3D worlds. 
             We're integrating this technology to turn your static memories into 
             <span className={isDark ? 'text-white' : 'text-gray-800'}> living, walkable experiences</span>.
           </p>
@@ -279,7 +279,7 @@ export default function VisionPage() {
               { 
                 step: '03', 
                 title: 'World Generation', 
-                desc: 'Genie creates an explorable 3D environment',
+                desc: 'AI creates an explorable 3D environment',
                 icon: '🌍',
                 color: 'rgba(236,72,153,0.2)'
               },
@@ -332,7 +332,7 @@ export default function VisionPage() {
           >
             <iframe
               src="https://www.youtube.com/embed/YxkGdX4WIBE?rel=0"
-              title="Google Genie preview"
+              title="3D World Generation preview"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
               className="absolute inset-0 w-full h-full"
@@ -351,7 +351,7 @@ export default function VisionPage() {
             Technical Architecture
           </h2>
           <p className={`text-center mb-12 max-w-xl mx-auto ${isDark ? 'text-white/50' : 'text-gray-600'}`}>
-            How Nova and Google Genie work together
+            How Nova powers 3D world generation
           </p>
 
           {/* Architecture Diagram */}
@@ -394,7 +394,7 @@ export default function VisionPage() {
                   <span className="text-2xl">🧠</span>
                   <span className="text-cyan-400 text-xs font-semibold">Nova</span>
                   <span className={`text-[10px] ${isDark ? 'text-white/30' : 'text-gray-400'}`}>+</span>
-                  <span className="text-purple-400 text-xs font-semibold">Genie</span>
+                  <span className="text-purple-400 text-xs font-semibold">3D Gen</span>
                 </div>
                 <h3 className={`font-medium mb-1 ${isDark ? 'text-white' : 'text-gray-800'}`}>AI Processing</h3>
                 <p className={`text-sm ${isDark ? 'text-white/40' : 'text-gray-500'}`}>Analysis + Generation</p>
@@ -418,7 +418,7 @@ export default function VisionPage() {
             {/* Tech stack */}
             <div className="mt-10 pt-8 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
               <div className="flex flex-wrap justify-center gap-3">
-                {['Nova Pro', 'Nova Lite', 'Google Genie', 'WebGL', 'Three.js'].map((tech) => (
+                {['Nova Pro', 'Nova Lite', '3D Generation', 'WebGL', 'Three.js'].map((tech) => (
                   <span 
                     key={tech}
                     className={`px-3 py-1.5 rounded-lg text-xs ${isDark ? 'text-white/60' : 'text-gray-600'}`}
@@ -471,7 +471,7 @@ export default function VisionPage() {
       {/* Footer note */}
       <div className="py-8 text-center" style={{ borderTop: '1px solid var(--border-subtle)' }}>
         <p className={`text-sm ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
-          Google Genie integration is in development. Features shown are conceptual previews.
+          3D world generation is in development. Features shown are conceptual previews.
         </p>
       </div>
     </div>

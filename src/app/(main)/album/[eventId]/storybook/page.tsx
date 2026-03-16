@@ -192,12 +192,15 @@ export default function LivingStorybookPage() {
   }, [eventId, initialMode]);
 
   // ============================================================================
-  // VOICE HELPERS
+  // VOICE HELPERS — use storybook_narrator_voice from album page (polly:X or cloned:voiceId)
   // ============================================================================
 
+  const getStorybookNarrator = useCallback((): string | null => {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('storybook_narrator_voice');
+  }, []);
+
   const getVoiceId = useCallback(() => {
-    const localVoice = typeof window !== 'undefined' ? localStorage.getItem('clonedVoiceId') : null;
-    if (localVoice) return localVoice;
     const memberWithVoice = members.find(m => m.voice_clone_id);
     return memberWithVoice?.voice_clone_id || null;
   }, [members]);
@@ -217,7 +220,51 @@ export default function LivingStorybookPage() {
 
     if (isStopped.current) return;
 
-    const voiceId = getVoiceId();
+    const narratorPref = getStorybookNarrator();
+    if (narratorPref) {
+      const [voiceType, voiceId] = narratorPref.split(':');
+      if (voiceType === 'cloned' && voiceId) {
+        try {
+          const res = await fetch('/api/voice/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, voiceId, options: { stability: 0.5, similarityBoost: 0.75 } }),
+          });
+          if (isStopped.current) return;
+          const data = await res.json();
+          if (data.success && data.audioUrl) {
+            if (!audioRef.current) audioRef.current = new Audio();
+            audioRef.current.src = data.audioUrl;
+            audioRef.current.onended = () => { if (!isStopped.current) onEnd?.(); };
+            audioRef.current.onerror = () => { if (!isStopped.current) onEnd?.(); };
+            await audioRef.current.play();
+            return;
+          }
+        } catch { /* fall through */ }
+      } else if (voiceType === 'polly' && voiceId) {
+        try {
+          const res = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, voice: { name: voiceId } }),
+          });
+          if (isStopped.current) return;
+          const data = await res.json();
+          if (data.audio_base64) {
+            if (!audioRef.current) audioRef.current = new Audio();
+            audioRef.current.src = `data:${data.mime_type || 'audio/mpeg'};base64,${data.audio_base64}`;
+            audioRef.current.onended = () => { if (!isStopped.current) onEnd?.(); };
+            audioRef.current.onerror = () => { if (!isStopped.current) onEnd?.(); };
+            await audioRef.current.play();
+            return;
+          }
+        } catch { /* fall through */ }
+      }
+    }
+
+    // Fallback: cloned from localStorage or first member with voice
+    const fallbackVoiceId = typeof window !== 'undefined' ? localStorage.getItem('clonedVoiceId') : null;
+    const voiceId = fallbackVoiceId || getVoiceId();
     if (voiceId) {
       try {
         const res = await fetch('/api/voice/tts', {
@@ -242,7 +289,7 @@ export default function LivingStorybookPage() {
     const words = text.split(/\s+/).length;
     const readingTimeMs = Math.max(4000, words * 400);
     autoAdvanceTimerRef.current = setTimeout(() => { if (!isStopped.current) onEnd?.(); }, readingTimeMs);
-  }, [getVoiceId]);
+  }, [getStorybookNarrator, getVoiceId]);
 
   const isStopped = useRef(false);
 

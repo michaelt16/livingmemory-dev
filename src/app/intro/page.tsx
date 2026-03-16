@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import EVAOrb from '@/components/EVAOrb';
 import { AuroraWave } from '@/components/capture/AuroraWave';
 
@@ -102,7 +103,7 @@ export default function IntroPage() {
   const [orbScale, setOrbScale] = useState(0);
   const [showNameInput, setShowNameInput] = useState(false);
   const [userName, setUserName] = useState('');
-  const [inviteCode, setInviteCode] = useState('');
+  const [inviteCode, setInviteCode] = useState('FAMILY2024');
   const [isTransitioning, setIsTransitioning] = useState(false);
   
   // Tutorial flow after name
@@ -420,13 +421,31 @@ export default function IntroPage() {
     }, 1000);
   }, [router]);
   
-  // Skip intro — jump straight to registration form
+  // Skip intro — stop everything, speak final line, then show name input
   const handleSkip = useCallback(() => {
+    // Stop any in-progress audio
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    // Kill any pending typewriter or scene timers
+    if (typewriterRef.current) { clearTimeout(typewriterRef.current); typewriterRef.current = null; }
+    if (sceneTimeoutRef.current) { clearTimeout(sceneTimeoutRef.current); sceneTimeoutRef.current = null; }
+    setIsTyping(false);
+    setIsAISpeaking(false);
+    setDisplayedText('');
+
+    // Jump to the invitation scene visually
     setCurrentSceneIndex(SCENES.length - 1);
+    // Use a sentinel value that won't trigger the line-processing effect
     setCurrentLineIndex(SCENES[SCENES.length - 1].lines.length);
-    setShowNameInput(true);
-  }, []);
+
+    // Speak the final line, then show name input
+    const finalLine = "Now, what should I call you?";
+    speakWithPolly(finalLine, {
+      useTutorialText: false,
+      onDone: () => {
+        setShowNameInput(true);
+      },
+    });
+  }, [speakWithPolly]);
   
   // Keep startIntro in a ref so we can call it from mount effect without re-running
   const startIntroRef = useRef(startIntro);
@@ -763,32 +782,44 @@ export default function IntroPage() {
       
       {/* Name input */}
       {showNameInput && !isTransitioning && tutorialPhase === 'none' && (
-        <div className="absolute left-0 right-0 top-[62%] flex justify-center px-8 name-input-appear z-40">
-          <form onSubmit={handleNameSubmit} className="flex flex-col items-center gap-6 w-full max-w-md">
-            <input
-              type="text"
-              value={userName}
-              onChange={(e) => setUserName(e.target.value)}
-              placeholder="Your name..."
-              autoFocus
-              className="w-full bg-transparent border-b-2 border-cyan-500/50 focus:border-cyan-400 text-white text-2xl text-center py-4 outline-none placeholder-white/30 transition-colors"
-              style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
-            />
-            <input
-              type="text"
-              value={inviteCode}
-              onChange={(e) => setInviteCode(e.target.value)}
-              placeholder="Family invite code (optional)"
-              className="w-full bg-transparent border-b border-white/20 focus:border-cyan-400/50 text-white/70 text-sm text-center py-2 outline-none placeholder-white/20 transition-colors"
-            />
-            <button
-              type="submit"
-              disabled={!userName.trim()}
-              className="px-8 py-3 bg-gradient-to-r from-cyan-600 to-cyan-500 text-white rounded-full font-medium tracking-wide hover:from-cyan-500 hover:to-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-            >
-              Begin
-            </button>
-          </form>
+        <div className="absolute left-0 right-0 top-[58%] flex justify-center px-8 name-input-appear z-40">
+          <div className="flex flex-col items-center w-full max-w-md">
+            <form onSubmit={handleNameSubmit} className="flex flex-col items-center gap-5 w-full">
+              <input
+                type="text"
+                value={userName}
+                onChange={(e) => setUserName(e.target.value)}
+                placeholder="Your name..."
+                autoFocus
+                className="w-full bg-transparent border-b-2 border-cyan-500/50 focus:border-cyan-400 text-white text-2xl text-center py-4 outline-none placeholder-white/30 transition-colors"
+                style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+              />
+              <input
+                type="text"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value)}
+                placeholder="Family invite code (optional)"
+                className="w-full bg-transparent border-b border-white/20 focus:border-cyan-400/50 text-white/70 text-sm text-center py-2 outline-none placeholder-white/20 transition-colors"
+              />
+              <button
+                type="submit"
+                disabled={!userName.trim()}
+                className="px-8 py-3 bg-gradient-to-r from-cyan-600 to-cyan-500 text-white rounded-full font-medium tracking-wide hover:from-cyan-500 hover:to-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                Begin
+              </button>
+            </form>
+            <div className="mt-6 flex items-center gap-2">
+              <span className="w-8 h-px bg-white/10" />
+              <Link
+                href="/login"
+                className="text-white/30 hover:text-white/60 text-sm transition-colors"
+              >
+                Already have an account? Sign in
+              </Link>
+              <span className="w-8 h-px bg-white/10" />
+            </div>
+          </div>
         </div>
       )}
       
@@ -871,14 +902,23 @@ export default function IntroPage() {
         </div>
       )}
       
-      {/* Skip button - hide during tutorial phase */}
+      {/* Skip + Sign in — hide during tutorial phase */}
       {currentSceneIndex >= 0 && !showNameInput && !isTransitioning && tutorialPhase === 'none' && (
-        <button
-          onClick={handleSkip}
-          className="absolute bottom-8 right-8 text-white/30 hover:text-white/60 text-sm tracking-wider uppercase transition-colors z-50"
-        >
-          Skip
-        </button>
+        <div className="absolute bottom-8 right-8 flex items-center gap-4 z-50">
+          <Link
+            href="/login"
+            className="text-white/25 hover:text-white/50 text-sm transition-colors"
+          >
+            Sign in
+          </Link>
+          <span className="text-white/10">|</span>
+          <button
+            onClick={handleSkip}
+            className="text-white/30 hover:text-white/60 text-sm tracking-wider uppercase transition-colors"
+          >
+            Skip
+          </button>
+        </div>
       )}
       
       {/* Loading state - brief while intro auto-starts */}

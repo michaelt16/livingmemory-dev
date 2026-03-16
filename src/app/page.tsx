@@ -213,7 +213,7 @@ export default function HomePage() {
           </div>
 
           {/* CTA */}
-          <div className="mt-10 md:mt-14 animate-fade-in-up" style={{ animationDelay: '1.1s' }}>
+          <div className="mt-10 md:mt-14 flex flex-col sm:flex-row items-center gap-4 animate-fade-in-up" style={{ animationDelay: '1.1s' }}>
             <Link
               href="/intro"
               className="inline-flex items-center gap-3 px-7 py-3.5 bg-white text-[#0a0a0a] rounded-full text-sm font-medium hover:bg-white/90 transition-all active:scale-[0.97]"
@@ -222,6 +222,12 @@ export default function HomePage() {
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
               </svg>
+            </Link>
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-sm font-medium text-white/80 hover:text-white border border-white/30 hover:border-white/50 transition-all"
+            >
+              Try demo
             </Link>
           </div>
         </div>
@@ -332,12 +338,12 @@ export default function HomePage() {
               <p className="text-[15px] text-white/35 leading-relaxed mb-8 max-w-lg">
                 Old albums. Faded prints. Shoeboxes of memories. Point your camera at any
                 photograph and EVA detects, captures, and enhances it — all in real time.
-                Nano Banana, powered by Amazon Nova Canvas, extracts and
+                Nova Canvas extracts and
                 cleans up each photo to pristine quality.
               </p>
               <div className="flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-white/20">
                 <span>Real-time detection</span>
-                <span>Nano Banana cleanup</span>
+                <span>Nova cleanup</span>
                 <span>Auto enhancement</span>
                 <span>Prints & screens</span>
               </div>
@@ -417,7 +423,7 @@ export default function HomePage() {
                 Watch still photos come alive
               </h3>
               <p className="text-[15px] text-white/35 leading-relaxed max-w-lg">
-                Choose your animation engine — Google&apos;s Veo 3 for cinematic realism
+                Choose your animation engine — Veo 3 for cinematic realism
                 or Grok for stylistic flair. Before animating, transform photos into
                 entirely new art styles: Disney&nbsp;/ Pixar, Studio Ghibli, or Anime.
                 Each photo becomes a living moment.
@@ -473,7 +479,7 @@ export default function HomePage() {
                 <p className="text-[11px] tracking-[0.2em] uppercase text-white/20 mb-4">Animation engines</p>
                 <div className="space-y-3">
                   {[
-                    { name: 'Veo 3', tag: 'Google', desc: 'Cinematic, natural motion with temporal coherence' },
+                    { name: 'Veo 3', tag: 'Video AI', desc: 'Cinematic, natural motion with temporal coherence' },
                     { name: 'Grok Imagine', tag: 'xAI', desc: 'Fast stylistic animations with creative flair' },
                   ].map((e, i) => (
                     <div key={i} className="flex items-start gap-3">
@@ -788,22 +794,22 @@ export default function HomePage() {
             <p className="text-xs tracking-[0.2em] uppercase text-white/15 mb-6">What&apos;s next</p>
           </Reveal>
           <div className="space-y-16 mt-10">
-            {/* Google Genie */}
+            {/* 3D Worlds */}
             <Reveal delay={100}>
               <div>
                 <div className="flex items-center gap-3 mb-2">
-                  <p className="text-[15px] text-white/70 font-medium">Google Genie</p>
+                  <p className="text-[15px] text-white/70 font-medium">3D Worlds</p>
                   <span className="text-[10px] text-white/15 tracking-widest uppercase border border-white/[0.06] px-2 py-0.5 rounded">Coming soon</span>
                 </div>
                 <p className="text-[14px] text-white/30 leading-relaxed max-w-2xl mb-5">
-                  Step inside your photographs. Genie will transform flat images into
+                  Step inside your photographs. 3D Worlds will transform flat images into
                   explorable 3D worlds — walk through grandma&apos;s kitchen, revisit
                   a childhood playground.
                 </p>
                 <div className="aspect-video w-full rounded-xl overflow-hidden border border-white/[0.06]">
                   <iframe
                     src="https://www.youtube.com/embed/YxkGdX4WIBE?rel=0"
-                    title="Google Genie preview"
+                    title="3D world preview"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
                     className="w-full h-full"
@@ -840,12 +846,12 @@ export default function HomePage() {
       </section>
 
       {/* ================================================================ */}
-      {/* TECH — Built with Google                                         */}
+      {/* TECH — Built with Amazon Nova                                     */}
       {/* ================================================================ */}
       <section className="py-24 md:py-32 px-6 border-t border-white/[0.04]">
         <div className="max-w-5xl mx-auto">
           <Reveal>
-            <p className="text-xs tracking-[0.2em] uppercase text-white/15 mb-12">Built with Google AI</p>
+            <p className="text-xs tracking-[0.2em] uppercase text-white/15 mb-12">Built with Amazon Nova</p>
           </Reveal>
           <Reveal delay={100}>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-y-10 gap-x-8 md:gap-x-10">
@@ -854,7 +860,7 @@ export default function HomePage() {
                 { name: 'Nova Sonic', desc: 'Real-time voice conversations — talk to EVA naturally about your memories' },
                 { name: 'Veo 3', desc: 'Transforms static photographs into cinematic animated video' },
                 { name: 'Cloud TTS', desc: 'Text-to-speech narration with multiple voice options' },
-                { name: 'Genie', desc: '3D world generation from photographs (coming soon)' },
+                { name: '3D Worlds', desc: '3D world generation from photographs (coming soon)' },
               ].map((tech, i) => (
                 <div key={i}>
                   <p className="text-sm text-white/60 font-medium mb-2">{tech.name}</p>
@@ -920,7 +926,7 @@ export default function HomePage() {
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Image src="/livingmemory.png" alt="" width={20} height={20} className="opacity-30" />
-            <p className="text-xs text-white/15">Living Memory — A Google Labs experiment. AI outputs may vary.</p>
+            <p className="text-xs text-white/15">Living Memory — Built with Amazon Nova. AI outputs may vary.</p>
           </div>
           <div className="flex items-center gap-6 text-xs text-white/15">
             <Link href="#" className="hover:text-white/30 transition-colors">Privacy</Link>

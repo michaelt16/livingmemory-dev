@@ -6,7 +6,7 @@
 export function getExtractionLabel(method?: string): string {
   if (method === 'bbox-crop') return '✨ Cropped';
   if (method === 'full-frame') return '📷 Full frame';
-  if (method === 'nano-banana') return '🍌 Enhanced';
+  if (method === 'nano-banana') return '🍌 Nano Banana';
   return '📷 Captured';
 }
 
@@ -96,7 +96,7 @@ export async function enhanceWithNanoBanana(imageBase64: string): Promise<NanoBa
     if (data.success && data.imageBase64) {
       const imageDataUrl = `data:${data.mimeType || 'image/png'};base64,${data.imageBase64}`;
       const model = data.model || 'unknown';
-      console.log('🍌 [client] Model used:', model);
+      console.log('[Nano Banana] Model used:', model);
       return { imageDataUrl, model };
     }
     return null;

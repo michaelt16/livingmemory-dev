@@ -2,6 +2,9 @@
   "name": "gemini3hackathon",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "node server.mjs",
     "dev:next": "next dev",
@@ -13,6 +16,7 @@
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1000.0",
     "@aws-sdk/client-polly": "^3.995.0",
+    "@google/genai": "^1.44.0",
     "@mediapipe/camera_utils": "^0.3.1675466862",
     "@mediapipe/drawing_utils": "^0.3.1675466124",
     "@mediapipe/selfie_segmentation": "^0.1.1675465747",

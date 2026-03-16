@@ -265,14 +265,22 @@ class SonicProxy {
               console.log('[Nova Sonic] Audio output chunk received');
               this.send({ type: 'audio', data: e.audioOutput.content });
             } else if (e.textOutput) {
+              const content = e.textOutput.content || '';
               const role = e.textOutput.role === 'USER' ? 'user' : 'assistant';
-              console.log(`[Nova Sonic] Text output (${role}):`, (e.textOutput.content || '').substring(0, 80));
-              this.send({ type: 'text', role, content: e.textOutput.content });
+              const isInterruptedJson = /^\s*\{\s*["']interrupted["']\s*:\s*true\s*\}\s*$/i.test(content.trim());
+              if (isInterruptedJson) {
+                this.send({ type: 'interrupted' });
+                continue;
+              }
+              if (content.trim()) {
+                console.log(`[Nova Sonic] Text output (${role}):`, content.substring(0, 80));
+                this.send({ type: 'text', role, content });
+              }
             } else if (e.contentStart) {
               console.log('[Nova Sonic] Content start:', e.contentStart.type, e.contentStart.role);
             } else if (e.contentEnd) {
               console.log('[Nova Sonic] Content end, stopReason:', e.contentEnd.stopReason);
-              if (e.contentEnd.stopReason) {
+              if (e.contentEnd.stopReason === 'END_TURN') {
                 this.send({ type: 'turnComplete' });
               }
             } else if (e.completionEnd) {
@@ -472,6 +480,7 @@ app.prepare().then(() => {
   wss.on('connection', (ws) => {
     console.log('[Nova Sonic] Client connected');
     let proxy = null;
+    let lastPhotoContextHash = '';
 
     ws.on('message', (raw) => {
       try {
@@ -500,14 +509,21 @@ app.prepare().then(() => {
             if (proxy) proxy.sendText(msg.content);
             break;
 
-          case 'context':
-            if (proxy) proxy.sendText(`[CONTEXT] ${msg.content}`, false);
+          case 'context': {
+            const ctx = msg.content || '';
+            console.log('[Nova Sonic] Context (non-interactive):', ctx.substring(0, 150));
+            // All context is non-interactive — EVA remembers but doesn't respond.
+            // She will reference it naturally when the user speaks next.
+            if (proxy) proxy.sendText(`[CONTEXT] ${ctx}`, false);
             break;
+          }
 
           case 'imageContext':
+            console.log('[Nova Sonic] Image context:', (msg.description || '').substring(0, 200));
             if (proxy) {
-              proxy.sendText(`[CONTEXT] I'm looking at a photo. Here is what it shows: ${msg.description}`, false);
-              if (msg.userText) proxy.sendText(msg.userText);
+              // Brief acknowledgment — EVA should mention 1 detail then WAIT for user to talk
+              const photoContext = `[PHOTO DESCRIPTION: ${msg.description}] Say ONE short sentence acknowledging the photo — mention one specific thing you notice. Then ask a single open question like "Tell me about this moment" and STOP. Do NOT describe the whole photo. Keep it under 20 words total.`;
+              proxy.sendText(photoContext);
             }
             break;
 

@@ -17,19 +17,27 @@ interface PhotoGalleryProps {
   photos: Photo[];
   currentPhotoId: string | null;
   selectedPhotoId: string | null;
+  discussingPhotoId?: string | null;
+  isAnalyzingForDiscussion?: boolean;
   onSelectPhoto: (id: string | null) => void;
   onRemovePhoto: (id: string, reason: 'delete' | 'retake') => void;
   onEnhancePhoto?: (id: string) => Promise<void>;
+  onDiscussPhoto?: (id: string) => void;
+  onStopDiscussing?: () => void;
   getExtractionLabel: (method?: string) => string;
 }
 
 export function PhotoGallery({ 
   photos, 
   currentPhotoId, 
-  selectedPhotoId, 
+  selectedPhotoId,
+  discussingPhotoId,
+  isAnalyzingForDiscussion, 
   onSelectPhoto,
   onRemovePhoto,
   onEnhancePhoto,
+  onDiscussPhoto,
+  onStopDiscussing,
   getExtractionLabel,
 }: PhotoGalleryProps) {
   const [enhancingId, setEnhancingId] = useState<string | null>(null);
@@ -146,6 +154,43 @@ export function PhotoGallery({
                     )}
                   </div>
                   
+                  {/* Discuss with EVA button */}
+                  {onDiscussPhoto && (
+                    discussingPhotoId === photo.id ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onStopDiscussing?.();
+                        }}
+                        className="w-full py-2.5 px-3 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 bg-cyan-500/30 border border-cyan-400/50 text-cyan-200"
+                      >
+                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                        Discussing — tap to stop
+                      </button>
+                    ) : isAnalyzingForDiscussion ? (
+                      <button
+                        type="button"
+                        disabled
+                        className="w-full py-2.5 px-3 rounded-lg text-sm font-medium bg-purple-500/10 border border-purple-500/30 text-purple-300/50 cursor-wait flex items-center justify-center gap-2"
+                      >
+                        <span className="w-4 h-4 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
+                        EVA is analyzing...
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDiscussPhoto(photo.id);
+                        }}
+                        className="w-full py-2.5 px-3 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 bg-purple-500/20 border border-purple-500/40 text-purple-300 hover:bg-purple-500/30"
+                      >
+                        💬 Discuss with EVA
+                      </button>
+                    )
+                  )}
+
                   {/* Enhance button - only show if not already enhanced */}
                   {onEnhancePhoto && photo.extractionMethod !== 'nano-banana' && (
                     <button
@@ -168,7 +213,7 @@ export function PhotoGallery({
                         </>
                       ) : (
                         <>
-                          🍌 Enhance (Full Frame)
+                          🍌 Nano Banana (Enhance)
                         </>
                       )}
                     </button>

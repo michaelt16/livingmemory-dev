@@ -1,9 +1,10 @@
 /**
  * Animation style definitions used across the app.
  *
- * Styles that need visual transformation (Disney, etc.) go through:
- *   1. Style-transfer the image (Nano Banana / Nova)
- *   2. Animate the stylized image with VEO 3 / Grok
+ * Styles that need visual transformation (Disney, Ghibli, Anime, LEGO) go through:
+ *   1. Style-transfer the image using the same art pipeline as nano-banana
+ *      (Gemini image generation when GEMINI_API_KEY is set, else Nova Canvas).
+ *   2. Animate the stylized image with VEO 3 / Grok.
  *
  * The image is already generated before animation — prompts stay simple.
  */
@@ -15,7 +16,7 @@ export interface AnimationStyle {
   icon: string;
   /** Whether the photo needs to be visually transformed before animation */
   needsStyleTransfer: boolean;
-  /** Prompt sent to Nova image generation to transform the photo's look */
+  /** Prompt for style transfer (Gemini or Nova Canvas) to transform the photo's look */
   styleTransferPrompt: string;
   /** Prompt for animation — image is already styled, just animate it */
   motionPrompt: string;
@@ -52,7 +53,6 @@ export const ANIMATION_STYLES: AnimationStyle[] = [
     styleTransferPrompt:
       'Transform this photograph into the art style of a Studio Ghibli animated film (like Spirited Away, My Neighbor Totoro, or Howl\'s Moving Castle). Re-render everything in Ghibli\'s distinctive hand-painted watercolor style with soft lines, gentle pastel colors, and intricate background detail. Keep the same people, poses, expressions, and composition. Make the scene feel peaceful and contemplative with Ghibli\'s signature naturalistic beauty. Visible brush-stroke texture, soft ambient lighting.',
     motionPrompt: 'Animate this image with gentle, serene motion. Keep faces stable.',
-    disabled: true,
   },
   {
     id: 'anime',
@@ -63,7 +63,16 @@ export const ANIMATION_STYLES: AnimationStyle[] = [
     styleTransferPrompt:
       'Transform this photograph into a high-quality Japanese anime art style (like Makoto Shinkai\'s Your Name or Weathering With You). Re-render all people and scenery in anime style with clean sharp lines, vibrant saturated colors, dramatic lighting with lens flares, and detailed backgrounds. Keep the same people, poses, expressions, and composition. Eyes should be larger and more expressive in anime proportion. Rich color palette with dramatic sky and lighting effects.',
     motionPrompt: 'Animate this image with dynamic motion. Keep faces stable.',
-    disabled: true,
+  },
+  {
+    id: 'lego',
+    label: 'LEGO',
+    description: 'LEGO minifigure world',
+    icon: '🧱',
+    needsStyleTransfer: true,
+    styleTransferPrompt:
+      'Transform this photograph into a photorealistic LEGO scene. Re-render every person as a LEGO minifigure with cylindrical heads, C-shaped claw hands, and printed facial expressions that match the original. Convert all objects, furniture, and scenery into LEGO bricks, plates, and slopes with visible stud patterns and ABS plastic sheen. Keep the same people, poses, composition, and setting — only change everything to be built from LEGO. Lighting should be realistic with soft shadows on the plastic surfaces, like an official LEGO promotional render.',
+    motionPrompt: 'Animate this LEGO scene with playful stop-motion style movement. Keep minifigure faces stable.',
   },
 ];
 

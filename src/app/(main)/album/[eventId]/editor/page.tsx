@@ -28,6 +28,8 @@ const EVAOrb = dynamic(
   { ssr: false }
 );
 
+import VoiceCloneModal from '@/components/VoiceCloneModal';
+
 // Aurora Wave for tutorial
 const AuroraWave = dynamic(
   () => import('@/components/capture/AuroraWave').then(mod => ({ default: mod.AuroraWave })),
@@ -114,6 +116,7 @@ export default function AlbumPage() {
   const router = useRouter();
   const eventId = params.eventId as string;
   const { userName } = useUserName();
+  const { user: currentUser } = useCurrentUser();
   const { theme } = useTheme();
   // Editor always stays in dark mode — too complex to theme and looks better dark
   const isLight = false;
@@ -177,6 +180,78 @@ export default function AlbumPage() {
   const [isGeneratingPreviews, setIsGeneratingPreviews] = useState(false);
   const [stylePreviewPhotoId, setStylePreviewPhotoId] = useState<string | null>(null); // which photo the previews are for
 
+  // Narrator voice selection
+  type NarratorVoice = { id: string; label: string; type: 'polly' | 'cloned' };
+  const POLLY_VOICES: NarratorVoice[] = [
+    { id: 'Ruth', label: 'Ruth', type: 'polly' },
+    { id: 'Matthew', label: 'Matthew', type: 'polly' },
+    { id: 'Danielle', label: 'Danielle', type: 'polly' },
+    { id: 'Gregory', label: 'Gregory', type: 'polly' },
+    { id: 'Stephen', label: 'Stephen', type: 'polly' },
+    { id: 'Joanna', label: 'Joanna', type: 'polly' },
+  ];
+  const [narratorVoice, setNarratorVoice] = useState<string>('polly:Ruth');
+  const [clonedVoices, setClonedVoices] = useState<NarratorVoice[]>([]);
+  const [showVoiceDropdown, setShowVoiceDropdown] = useState(false);
+  const [showVoiceCloneModal, setShowVoiceCloneModal] = useState(false);
+
+  // Load cloned voices on mount — fetch from API + localStorage fallback
+  useEffect(() => {
+    let cancelled = false;
+    const userId = currentUser?.id || 'default';
+
+    fetch(`/api/voice/clone?userId=${encodeURIComponent(userId)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (cancelled) return;
+        const voices: NarratorVoice[] = [];
+
+        // Saved voice from Supabase (primary source of truth)
+        if (data.savedVoice?.id) {
+          voices.push({ id: data.savedVoice.id, label: data.savedVoice.name || 'My Voice', type: 'cloned' });
+          localStorage.setItem('clonedVoiceId', data.savedVoice.id);
+          localStorage.setItem('clonedVoiceName', data.savedVoice.name || 'My Voice');
+        }
+
+        // Also include any additional ElevenLabs voices not already in the list
+        if (data.voices && Array.isArray(data.voices)) {
+          data.voices.forEach((v: { id: string; name: string }) => {
+            if (!voices.some(existing => existing.id === v.id)) {
+              voices.push({ id: v.id, label: v.name, type: 'cloned' });
+            }
+          });
+        }
+
+        if (voices.length > 0) {
+          setClonedVoices(voices);
+          setNarratorVoice(`cloned:${voices[0].id}`);
+        }
+      })
+      .catch(() => {
+        // API failed — fall back to localStorage
+        if (cancelled) return;
+        const clonedId = localStorage.getItem('clonedVoiceId');
+        const clonedName = localStorage.getItem('clonedVoiceName');
+        if (clonedId) {
+          setClonedVoices([{ id: clonedId, label: clonedName || 'My Voice', type: 'cloned' }]);
+          setNarratorVoice(`cloned:${clonedId}`);
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, [currentUser?.id]);
+
+  // Close voice dropdown on outside click
+  useEffect(() => {
+    if (!showVoiceDropdown) return;
+    const handle = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-voice-dropdown]')) setShowVoiceDropdown(false);
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [showVoiceDropdown]);
+
   // Album context & narration state
   const [albumContext, setAlbumContext] = useState<AlbumContext>('single_event');
   const [narrativePov, setNarrativePov] = useState<NarrativePov>('first_person');
@@ -212,7 +287,6 @@ export default function AlbumPage() {
   const [askQuestionText, setAskQuestionText] = useState('');
   const [isSendingQuestion, setIsSendingQuestion] = useState(false);
   const [realFamilyMembers, setRealFamilyMembers] = useState<AlbumMember[]>([]);
-  const { user: currentUser } = useCurrentUser();
 
   // Fetch real family members for the question picker
   useEffect(() => {
@@ -1321,9 +1395,11 @@ Keep responses brief. Do not add any extra commentary.`,
       // Build context for AI - use stories, perspectives, AND image URLs from photos
       const clipsWithStories = timelineClips.map(clip => {
         const photo = getPhoto(clip.photoId);
+        const hasStory = !!(photo?.summary && photo.summary.trim());
         return {
           order: clip.order + 1,
           story: photo?.summary || 'No story provided',
+          hasStory,
           hasAnimation: !!photo?.animated_url,
           perspectives: (photo as any)?.perspectives || [],
           imageUrl: photo?.original_url || photo?.thumbnail_url || null,
@@ -1351,15 +1427,16 @@ Keep responses brief. Do not add any extra commentary.`,
       if (response.ok) {
         const data = await response.json();
         
-        // Update individual clip narrations
         if (data.clipTexts && Array.isArray(data.clipTexts)) {
-          const updatedClips = timelineClips.map((clip, i) => ({
-            ...clip,
-            narration: data.clipTexts[i] || clip.narration,
-          }));
+          const updatedClips = timelineClips.map((clip, i) => {
+            const aiText = data.clipTexts[i];
+            const isPlaceholder = !aiText || aiText.trim() === '...' || aiText.trim() === '';
+            return {
+              ...clip,
+              narration: isPlaceholder ? '' : aiText,
+            };
+          });
           setTimelineClips(updatedClips);
-          
-          // Save to database
           await saveNarrationToDb(updatedClips);
         }
       } else {
@@ -1520,10 +1597,9 @@ Keep responses brief. Do not add any extra commentary.`,
       onEnd?.();
     };
 
-    // Use cloned voice from localStorage
-    const clonedVoiceId = localStorage.getItem('clonedVoiceId');
-    
-    if (clonedVoiceId) {
+    const [voiceType, voiceId] = narratorVoice.split(':');
+
+    if (voiceType === 'cloned' && voiceId) {
       setIsSpeaking(true);
       try {
         const response = await fetch('/api/voice/tts', {
@@ -1531,7 +1607,7 @@ Keep responses brief. Do not add any extra commentary.`,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             text, 
-            voiceId: clonedVoiceId,
+            voiceId,
             options: { stability: 0.5, similarityBoost: 0.75 }
           }),
         });
@@ -1552,19 +1628,47 @@ Keep responses brief. Do not add any extra commentary.`,
           return;
         }
       } catch (err) {
-        console.warn('TTS failed:', err);
+        console.warn('Cloned voice TTS failed:', err);
       }
       setIsSpeaking(false);
+    } else if (voiceType === 'polly' && voiceId) {
+      setIsSpeaking(true);
+      try {
+        const response = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, voice: { name: voiceId } }),
+        });
+
+        if (playbackStoppedRef.current) { setIsSpeaking(false); return; }
+
+        const data = await response.json();
+
+        if (data.audio_base64) {
+          if (!narrationAudioRef.current) {
+            narrationAudioRef.current = new Audio();
+          }
+          const audio = narrationAudioRef.current;
+          audio.src = `data:${data.mime_type || 'audio/mpeg'};base64,${data.audio_base64}`;
+          audio.onended = handleSpeechEnd;
+          audio.onerror = handleSpeechEnd;
+          await audio.play().catch(handleSpeechEnd);
+          return;
+        }
+      } catch (err) {
+        console.warn('Polly TTS failed:', err);
+      }
+      setIsSpeaking(false);
+    } else {
+      // Fallback: show text for estimated reading time, then advance
+      setIsSpeaking(true);
+      const words = text.split(/\s+/).length;
+      const readingTimeMs = Math.max(3000, words * 350);
+      setTimeout(() => {
+        if (!playbackStoppedRef.current) handleSpeechEnd();
+      }, readingTimeMs);
     }
-    
-    // No cloned voice: show text for estimated reading time, then advance
-    setIsSpeaking(true);
-    const words = text.split(/\s+/).length;
-    const readingTimeMs = Math.max(3000, words * 350);
-    setTimeout(() => {
-      if (!playbackStoppedRef.current) handleSpeechEnd();
-    }, readingTimeMs);
-  }, []);
+  }, [narratorVoice]);
 
   // ============================================================================
   // PLAY TIMELINE - Storybook-style: clips loop, narration controls advancement
@@ -1895,7 +1999,7 @@ Keep responses brief. Do not add any extra commentary.`,
                     {/* Enhancing overlay */}
                     {enhancingPhotoId === photo.id && (
                       <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
-                        <div className="text-white text-sm animate-pulse">🍌 Cropping...</div>
+                        <div className="text-white text-sm animate-pulse">🍌 Nano Banana...</div>
                       </div>
                     )}
                   </div>
@@ -2099,7 +2203,7 @@ Keep responses brief. Do not add any extra commentary.`,
                       disabled={!!enhancingPhotoId}
                       className="text-white/50 hover:text-white text-xs transition-colors disabled:opacity-40"
                     >
-                      {enhancingPhotoId === selectedClip.photoId ? '🍌...' : '🍌 Crop'}
+                      {enhancingPhotoId === selectedClip.photoId ? '🍌...' : '🍌 Nano Banana'}
                     </button>
                   </div>
                 </div>
@@ -2273,7 +2377,7 @@ Keep responses brief. Do not add any extra commentary.`,
                               const selected = (currentStyle.needsStyleTransfer && selectedPreviewIdx !== null) ? stylePreviews[selectedPreviewIdx] : null;
                               handleAnimatePhoto(selectedClip.photoId, 'veo3', selectedAnimStyle, selected?.imageBase64, selected?.imageUrl);
                             }}
-                            disabled={isAnimating || (currentStyle.needsStyleTransfer && stylePreviews.length > 0 && selectedPreviewIdx === null)}
+                            disabled={isAnimating || (currentStyle.needsStyleTransfer && selectedPreviewIdx === null)}
                             className="py-2.5 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-40 hover:scale-[1.02]"
                             style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)' }}
                           >
@@ -2290,7 +2394,7 @@ Keep responses brief. Do not add any extra commentary.`,
                               const selected = (currentStyle.needsStyleTransfer && selectedPreviewIdx !== null) ? stylePreviews[selectedPreviewIdx] : null;
                               handleAnimatePhoto(selectedClip.photoId, 'grok', selectedAnimStyle, selected?.imageBase64, selected?.imageUrl);
                             }}
-                            disabled={isAnimating || (currentStyle.needsStyleTransfer && stylePreviews.length > 0 && selectedPreviewIdx === null)}
+                            disabled={isAnimating || (currentStyle.needsStyleTransfer && selectedPreviewIdx === null)}
                             className="py-2.5 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-40 hover:scale-[1.02]"
                             style={{ background: 'linear-gradient(135deg, #f97316, #ef4444)' }}
                           >
@@ -2436,7 +2540,7 @@ Keep responses brief. Do not add any extra commentary.`,
                       disabled={!!enhancingPhotoId}
                       className="text-white/50 hover:text-white text-xs transition-colors disabled:opacity-40"
                     >
-                      {enhancingPhotoId === selectedPoolPhoto.id ? '🍌...' : '🍌 Crop'}
+                      {enhancingPhotoId === selectedPoolPhoto.id ? '🍌...' : '🍌 Nano Banana'}
                     </button>
                   </div>
                 </div>
@@ -2609,7 +2713,7 @@ Keep responses brief. Do not add any extra commentary.`,
                               const selected = (currentStyle.needsStyleTransfer && selectedPreviewIdx !== null) ? stylePreviews[selectedPreviewIdx] : null;
                               handleAnimatePhoto(selectedPoolPhoto.id, 'veo3', selectedAnimStyle, selected?.imageBase64, selected?.imageUrl);
                             }}
-                            disabled={isAnimating || (currentStyle.needsStyleTransfer && stylePreviews.length > 0 && selectedPreviewIdx === null)}
+                            disabled={isAnimating || (currentStyle.needsStyleTransfer && selectedPreviewIdx === null)}
                             className="py-2.5 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-40 hover:scale-[1.02]"
                             style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)' }}
                           >
@@ -2626,7 +2730,7 @@ Keep responses brief. Do not add any extra commentary.`,
                               const selected = (currentStyle.needsStyleTransfer && selectedPreviewIdx !== null) ? stylePreviews[selectedPreviewIdx] : null;
                               handleAnimatePhoto(selectedPoolPhoto.id, 'grok', selectedAnimStyle, selected?.imageBase64, selected?.imageUrl);
                             }}
-                            disabled={isAnimating || (currentStyle.needsStyleTransfer && stylePreviews.length > 0 && selectedPreviewIdx === null)}
+                            disabled={isAnimating || (currentStyle.needsStyleTransfer && selectedPreviewIdx === null)}
                             className="py-2.5 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-40 hover:scale-[1.02]"
                             style={{ background: 'linear-gradient(135deg, #f97316, #ef4444)' }}
                           >
@@ -2790,9 +2894,13 @@ Keep responses brief. Do not add any extra commentary.`,
                   </p>
                 </div>
                 <div className="p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <p className="text-white/40 text-xs uppercase tracking-wider mb-1">Narration</p>
-                  <p className="text-white text-2xl font-light">
-                    {narrativePov === 'first_person' ? '1st' : '3rd'}<span className="text-white/30 text-base ml-1">person</span>
+                  <p className="text-white/40 text-xs uppercase tracking-wider mb-1">Voice</p>
+                  <p className="text-white text-lg font-light truncate">
+                    {(() => {
+                      const [type, id] = narratorVoice.split(':');
+                      if (type === 'cloned') return clonedVoices.find(v => v.id === id)?.label || 'My Voice';
+                      return id || 'Ruth';
+                    })()}
                   </p>
                 </div>
               </div>
@@ -3080,6 +3188,20 @@ Keep responses brief. Do not add any extra commentary.`,
       {/* ================================================================== */}
       {/* VIDEO EXPORTER */}
       {/* ================================================================== */}
+      <VoiceCloneModal
+        isOpen={showVoiceCloneModal}
+        onClose={() => setShowVoiceCloneModal(false)}
+        onSuccess={(voiceId, voiceName) => {
+          setClonedVoices(prev => {
+            const exists = prev.some(v => v.id === voiceId);
+            return exists ? prev : [...prev, { id: voiceId, label: voiceName, type: 'cloned' }];
+          });
+          setNarratorVoice(`cloned:${voiceId}`);
+          setShowVoiceCloneModal(false);
+        }}
+        userName={userName || undefined}
+      />
+
       <VideoExporter
         isOpen={showVideoExporter}
         onClose={() => {
@@ -3170,6 +3292,97 @@ Keep responses brief. Do not add any extra commentary.`,
             >
               3rd Person
             </button>
+          </div>
+
+          {/* Voice selector */}
+          <div className="relative mr-2" data-voice-dropdown>
+            <button
+              onClick={() => setShowVoiceDropdown(v => !v)}
+              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg transition-all text-white/70 hover:text-white hover:bg-white/5"
+              style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+              </svg>
+              {(() => {
+                const [type, id] = narratorVoice.split(':');
+                if (type === 'cloned') {
+                  const cv = clonedVoices.find(v => v.id === id);
+                  return cv?.label || 'My Voice';
+                }
+                return id || 'Ruth';
+              })()}
+              <svg className="w-3 h-3 text-white/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+              </svg>
+            </button>
+            {showVoiceDropdown && (
+              <div
+                className="absolute bottom-full left-0 mb-1 w-52 rounded-xl shadow-2xl z-50 overflow-y-auto"
+                style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', maxHeight: 'min(320px, 50vh)' }}
+              >
+                {/* Clone your voice — first thing you see */}
+                <button
+                  type="button"
+                  onClick={() => { setShowVoiceDropdown(false); setShowVoiceCloneModal(true); }}
+                  className="w-full text-left px-3 py-2.5 text-sm text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 transition-colors flex items-center gap-2 rounded-t-xl"
+                >
+                  <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  Clone your voice
+                </button>
+                <div className="h-px mx-3 my-1" style={{ background: 'var(--border-subtle)' }} />
+                {clonedVoices.length > 0 && (
+                  <>
+                    <p className="px-3 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-white/30">Your Voice</p>
+                    {clonedVoices.map(v => (
+                      <button
+                        key={v.id}
+                        onClick={() => { setNarratorVoice(`cloned:${v.id}`); setShowVoiceDropdown(false); }}
+                        className={`w-full text-left px-3 py-2 text-sm transition-colors flex items-center gap-2 ${
+                          narratorVoice === `cloned:${v.id}`
+                            ? 'text-cyan-400 bg-cyan-500/10'
+                            : 'text-white/70 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+                        </svg>
+                        {v.label}
+                        {narratorVoice === `cloned:${v.id}` && <span className="ml-auto text-cyan-400">✓</span>}
+                      </button>
+                    ))}
+                    <div className="h-px mx-3 my-1" style={{ background: 'var(--border-subtle)' }} />
+                  </>
+                )}
+                <p className="px-3 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-white/30">AWS Polly</p>
+                {POLLY_VOICES.map(v => (
+                  <button
+                    key={v.id}
+                    onClick={() => { setNarratorVoice(`polly:${v.id}`); setShowVoiceDropdown(false); }}
+                    className={`w-full text-left px-3 py-2 text-sm transition-colors flex items-center gap-2 ${
+                      narratorVoice === `polly:${v.id}`
+                        ? 'text-cyan-400 bg-cyan-500/10'
+                        : 'text-white/70 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <svg className="w-3.5 h-3.5 flex-shrink-0 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+                    </svg>
+                    {v.label}
+                    {narratorVoice === `polly:${v.id}` && <span className="ml-auto text-cyan-400">✓</span>}
+                  </button>
+                ))}
+                <div className="h-px mx-3 my-1" style={{ background: 'var(--border-subtle)' }} />
+                <Link
+                  href="/profile"
+                  className="w-full text-left px-3 py-2 text-[10px] text-white/25 hover:text-white/40 transition-colors block rounded-b-xl"
+                >
+                  More options in Settings
+                </Link>
+              </div>
+            )}
           </div>
 
           {/* Generate Narration Button */}
@@ -3382,6 +3595,9 @@ Keep responses brief. Do not add any extra commentary.`,
                   {timelineClips.map((clip, index) => {
                     const isCurrentlyPlaying = isPlayingTimeline && currentClipIndex === index;
                     const hasLongText = (clip.narration?.length || 0) > 60;
+                    const photo = getPhoto(clip.photoId);
+                    const hasStory = !!(photo?.summary && photo.summary.trim());
+                    const needsStory = !hasStory && !clip.narration;
                     
                     return (
                       <div
@@ -3397,16 +3613,32 @@ Keep responses brief. Do not add any extra commentary.`,
                             ? 'ring-2 ring-green-500'
                             : selectedClipId === clip.id
                             ? 'ring-2 ring-amber-500'
+                            : needsStory
+                            ? 'ring-1 ring-red-500/50 hover:ring-red-500/80'
                             : 'ring-1 ring-amber-500/30 hover:ring-amber-500/60'
                         }`}
                         style={{ width: 150 }}
                       >
-                        <div className="h-full bg-amber-900/30 border border-amber-500/20 rounded p-2 overflow-y-auto">
+                        <div className={`h-full rounded p-2 overflow-y-auto ${
+                          needsStory
+                            ? 'bg-red-900/20 border border-red-500/30'
+                            : 'bg-amber-900/30 border border-amber-500/20'
+                        }`}>
                           <div className="h-full overflow-y-auto">
                             {clip.narration ? (
                               <p className={`text-amber-100/80 leading-tight ${hasLongText ? 'text-xs' : 'text-xs'}`}>
                                 {clip.narration}
                               </p>
+                            ) : needsStory ? (
+                              <div className="flex flex-col items-center justify-center h-full gap-1">
+                                <svg className="w-3.5 h-3.5 text-red-400/70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 15.75h.007v.008H12v-.008z" />
+                                </svg>
+                                <p className="text-red-400/70 text-[10px] italic text-center leading-tight">
+                                  Needs story
+                                </p>
+                              </div>
                             ) : (
                               <p className="text-amber-500/50 text-xs italic">
                                 Click to edit...
